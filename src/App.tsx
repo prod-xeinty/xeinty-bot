@@ -26,7 +26,7 @@ function App() {
   return (
     <main className="app">
       <header className="topbar">
-        <span className="brand">beatsy<span className="brand-dot">.</span></span>
+        <span className="brand">xeinty<span className="brand-dot">.</span></span>
         <span className="mode">{webApp ? 'Telegram Mini App' : 'Предпросмотр'}</span>
       </header>
 
@@ -42,7 +42,7 @@ function App() {
         <p>Добавление аудио и обложки, параметры трека и подготовка публикации — следующий этап разработки.</p>
       </section>
 
-      <footer>Beatsy · ранняя версия</footer>
+      <footer>XEINTY · ранняя версия</footer>
     </main>
   )
 }

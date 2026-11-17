@@ -1,8 +1,8 @@
-# Beatsy Telegram Shell Design
+# XEINTY Telegram Shell Design
 
 ## Intent
 
-Open a working Beatsy application inside Telegram as soon as possible, without a payment card or cloud database. This is the first technical step toward the bitmaker publishing tool described in the project brief.
+Open a working XEINTY application inside Telegram as soon as possible, without a payment card or cloud database. This is the first technical step toward the bitmaker publishing tool described in the project brief.
 
 ## Scope
 

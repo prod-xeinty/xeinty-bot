@@ -1,14 +1,14 @@
-# Beatsy Telegram Shell Implementation Plan
+# XEINTY Telegram Shell Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Create a static Beatsy Telegram Mini App that builds locally and is ready for free HTTPS hosting.
+**Goal:** Create a static XEINTY Telegram Mini App that builds locally and is ready for free HTTPS hosting.
 
 **Architecture:** Vite serves a React/TypeScript single-page app. A small Telegram adapter initializes WebApp and exposes user/theme state while allowing browser preview.
 
 **Tech Stack:** React, TypeScript, Vite, Telegram WebApp API.
 
-**Spec:** `docs/superpowers/specs/2026-11-17-beatsy-telegram-shell-design.md`
+**Spec:** `docs/superpowers/specs/2026-11-17-xeinty-telegram-shell-design.md`
 
 ## Global Constraints
 
