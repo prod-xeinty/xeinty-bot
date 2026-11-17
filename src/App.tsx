@@ -2,8 +2,23 @@ import { useEffect, useState } from 'react'
 import { applyTelegramTheme, getTelegramWebApp } from './telegram'
 
 function App() {
-  const [webApp] = useState(getTelegramWebApp)
+  const [webApp, setWebApp] = useState(getTelegramWebApp)
   const [firstName, setFirstName] = useState(webApp?.initDataUnsafe.user?.first_name)
+
+  useEffect(() => {
+    if (webApp) return
+
+    const script = document.createElement('script')
+    script.src = 'https://telegram.org/js/telegram-web-app.js'
+    script.async = true
+    script.onload = () => setWebApp(getTelegramWebApp())
+    document.head.appendChild(script)
+
+    return () => {
+      script.onload = null
+      script.remove()
+    }
+  }, [webApp])
 
   useEffect(() => {
     if (!webApp) return
