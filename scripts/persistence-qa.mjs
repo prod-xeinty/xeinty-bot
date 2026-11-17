@@ -26,7 +26,7 @@ try {
   await page.getByRole('button', { name: /Добавить свой бит/ }).click()
   await page.getByPlaceholder('Например, NO SIGNAL').fill('Persist Test')
   await page.locator('input[type=file][accept^="audio/"]').setInputFiles({ name: 'test.wav', mimeType: 'audio/wav', buffer: sampleWav() })
-  await page.locator('input[type=file][accept="image/*"]').setInputFiles({ name: 'cover.png', mimeType: 'image/png', buffer: await readFile('src/assets/monochrome-portrait.png') })
+  await page.locator('input[type=file][accept*="image/png"]').setInputFiles({ name: 'cover.png', mimeType: 'image/png', buffer: await readFile('src/assets/monochrome-portrait.png') })
   await page.getByRole('button', { name: /Создать черновик/ }).click()
   await page.getByRole('tab', { name: 'Публикация' }).click()
   await page.getByRole('textbox', { name: 'Подпись для Telegram' }).fill('Мой сохранённый текст')
