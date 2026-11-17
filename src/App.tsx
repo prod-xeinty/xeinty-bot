@@ -3,8 +3,9 @@ import { ArrowLeft, ArrowRight, AudioLines, Check, ChevronRight, CircleHelp, Cli
 import { getTelegramWebApp } from './telegram'
 import { makeStaticVideo, type VideoStage } from './video'
 import { saveVideoFile } from './save-video'
-import { deleteStoredBeat, loadStoredBeats, saveBeatMetadata, saveNewBeat, type StoredBeat } from './beat-store'
+import { deleteStoredBeat, loadStoredBeats, saveBeatCover, saveBeatMetadata, saveNewBeat, type StoredBeat } from './beat-store'
 import { cloudConfigured, createCloudBeat, deleteCloudBeat, loadCloudBeats, remoteFile, updateCloudBeat } from './cloud-beats'
+import { canonicalKeyOptions, normalizeMusicKey } from './music-key'
 
 type Screen = 'library' | 'create' | 'overview' | 'detail'
 type DetailTab = 'data' | 'publication' | 'links'
@@ -94,7 +95,7 @@ function App() {
         const audioUrl = files?.audioFile ? URL.createObjectURL(files.audioFile) : undefined
         if (coverUrl) fileUrlsRef.current.push(coverUrl)
         if (audioUrl) fileUrlsRef.current.push(audioUrl)
-        return { ...beat, cover: 0, coverUrl, audioUrl, audioFile: files?.audioFile, coverFile: files?.coverFile }
+        return { ...beat, key: normalizeMusicKey(beat.key) ?? beat.key, cover: 0, coverUrl, audioUrl, audioFile: files?.audioFile, coverFile: files?.coverFile }
       })
       setBeats((current) => [...restored.filter((beat) => !current.some((item) => item.id === beat.id)), ...current])
     }).catch(() => notify('Не удалось открыть хранилище на этом устройстве'))
@@ -106,7 +107,7 @@ function App() {
     let cancelled = false
     void loadCloudBeats(webApp.initData).then((saved) => {
       if (!cancelled) setBeats((current) => [
-        ...saved.map((beat) => ({ ...beat, cover: 0 })),
+        ...saved.map((beat) => ({ ...beat, key: normalizeMusicKey(beat.key) ?? beat.key, cover: 0 })),
         ...current.filter((beat) => !saved.some((remote) => remote.id === beat.id)),
       ])
     }).catch((error) => { if (!cancelled) notify(error instanceof Error ? error.message : 'Не удалось загрузить биты из облака') })
@@ -222,16 +223,33 @@ function App() {
       setSavingBeat(false)
     }
   }
+  async function changeCover(file?: File) {
+    if (!file || selected.isDemo || selected.cloud) return
+    const previousUrl = selected.coverUrl
+    const coverUrl = URL.createObjectURL(file)
+    try {
+      await saveBeatCover(selected.id, file)
+      setBeats((all) => all.map((beat) => beat.id === selected.id ? { ...beat, coverFile: file, coverUrl } : beat))
+      if (previousUrl?.startsWith('blob:')) URL.revokeObjectURL(previousUrl)
+      fileUrlsRef.current.push(coverUrl)
+      notify('Обложка обновлена')
+    } catch {
+      URL.revokeObjectURL(coverUrl)
+      notify('Не удалось сохранить обложку')
+    }
+  }
   async function addBeat(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!form.title.trim() || savingBeat) return
+    const normalizedKey = normalizeMusicKey(form.key)
+    if (form.key.trim() && normalizedKey === null) { notify('Не распознал тональность. Например: Cm, C#m или До минор.'); return }
     if (cloudAvailable && (!audioFile || !/\.mp3$/i.test(audioFile.name))) {
       notify('Для облака выбери MP3. WAV останется у тебя для работы с проектом.')
       return
     }
     setSavingBeat(true)
     const beat: Beat = {
-      id: `beat-${Date.now()}`, createdAt: Date.now(), title: form.title.trim().toUpperCase(), bpm: form.bpm || '—', key: form.key || '—',
+      id: `beat-${Date.now()}`, createdAt: Date.now(), title: form.title.trim().toUpperCase(), bpm: form.bpm || '—', key: normalizedKey || '—',
       tags: form.tags.trim() || 'без тегов', status: 'Черновик', cover: 0,
       coverUrl: coverFile ? URL.createObjectURL(coverFile) : undefined,
       audioUrl: audioFile ? URL.createObjectURL(audioFile) : undefined, audioName: audioFile?.name, audioFile: audioFile ?? undefined, coverFile: coverFile ?? undefined,
@@ -285,7 +303,7 @@ function App() {
           </>}
           {screen === 'create' && <>
             <div className="page-heading"><div><h1>Новый бит</h1><p>Добавь параметры, обложку и аудио для предпросмотра.</p></div></div>
-            <form className="create-layout" onSubmit={addBeat}><div className="form-panel"><div className="panel-title"><span>01</span><div><h2>Основное</h2><p>Название и музыкальные параметры</p></div></div><label className="field"><span>Название бита *</span><input required maxLength={40} placeholder="Например, NO SIGNAL" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></label><div className="field-grid"><label className="field"><span>BPM</span><input type="number" min="1" max="300" placeholder="138" value={form.bpm} onChange={(e) => setForm({ ...form, bpm: e.target.value })} /></label><label className="field"><span>Тональность</span><input placeholder="F# minor" value={form.key} onChange={(e) => setForm({ ...form, key: e.target.value })} /></label></div><label className="field"><span>Теги и настроение</span><input placeholder="dark trap, ambient, type beat" value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} /></label></div>
+            <form className="create-layout" onSubmit={addBeat}><div className="form-panel"><div className="panel-title"><span>01</span><div><h2>Основное</h2><p>Название и музыкальные параметры</p></div></div><label className="field"><span>Название бита *</span><input required maxLength={40} placeholder="Например, NO SIGNAL" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></label><div className="field-grid"><label className="field"><span>BPM</span><input type="number" min="1" max="300" placeholder="138" value={form.bpm} onChange={(e) => setForm({ ...form, bpm: e.target.value })} /></label><label className="field"><span>Тональность</span><input list="music-key-options" placeholder="Например, Cm или До минор" value={form.key} onChange={(e) => setForm({ ...form, key: e.target.value })} onBlur={(e) => { const key = normalizeMusicKey(e.target.value); if (key !== null) setForm((current) => ({ ...current, key })) }} /><datalist id="music-key-options">{canonicalKeyOptions.map((key) => <option key={key} value={key} />)}</datalist></label></div><p className="form-hint">Подойдут `Cm`, `C minor`, `C#m`, `До минор`, `До мажор` и бемольные варианты. Сохраню в едином виде: `C minor`, `C# major`.</p><label className="field"><span>Теги и настроение</span><input placeholder="dark trap, ambient, type beat" value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} /></label></div>
               <div className="form-panel"><div className="panel-title"><span>02</span><div><h2>Файлы</h2><p>Обложка и аудио для предпросмотра</p></div></div><div className="upload-grid"><label className="upload-zone"><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => setCoverFile(e.target.files?.[0] ?? null)} /><ImagePlus size={25} /><strong>{coverFile ? coverFile.name : 'Обложка'}</strong><span>PNG, JPG или WEBP</span></label><label className="upload-zone"><input type="file" accept={cloudAvailable ? '.mp3,audio/mpeg' : 'audio/*,.mp3,.wav'} onChange={(e) => setAudioFile(e.target.files?.[0] ?? null)} /><UploadCloud size={26} /><strong>{audioFile ? audioFile.name : 'Аудиофайл'}</strong><span>{cloudAvailable ? 'MP3 до 15 МБ' : 'MP3 или WAV'}</span></label></div><p className="form-hint">{cloudAvailable ? 'MP3 и обложка сохранятся в облаке. WAV и MP4 останутся на твоём устройстве.' : 'Файлы пока сохранятся на этом устройстве. Облако работает при запуске через Telegram после подключения проекта.'}</p></div>
               <div className="create-submit"><button type="submit" className="primary-button" disabled={savingBeat}>{savingBeat ? 'Сохраняем…' : 'Создать черновик'} {!savingBeat && <ArrowRight size={19} />}</button><span>{cloudAvailable ? 'Черновик будет доступен в Telegram на других устройствах.' : 'Черновик сохранится в этом браузере.'}</span></div></form>
           </>}
@@ -295,7 +313,7 @@ function App() {
           {screen === 'detail' && selected && <>
             <button className="back-link" onClick={() => navigate('library')}><ArrowLeft size={17} /> Все биты</button><section className="detail-hero"><Cover beat={selected} className="detail-cover" /><div className="detail-identity"><div className="eyebrow">{selected.isDemo ? 'Демо-проект' : 'Черновик'}</div><h1>{selected.title}</h1><p>{selected.tags}</p><div className="meta-row"><span>{selected.bpm} BPM</span><i /><span>{selected.key}</span></div><div className="detail-audio">{selected.audioUrl ? <><FileAudio2 size={17} /><span>{selected.audioName}</span><audio src={selected.audioUrl} controls preload="metadata" /></> : <><Music2 size={18} /><span>{selected.isDemo ? 'Аудио для этого демо-бита не загружено' : 'Аудиофайл не добавлен'}</span></>}</div></div></section>
             <div className="detail-tabs" role="tablist" aria-label="Разделы бита">{([['data', 'Данные'], ['publication', 'Публикация'], ['links', 'Ссылки']] as [DetailTab, string][]).map(([id, label]) => <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? 'is-active' : ''} onClick={() => setTab(id)}>{label}</button>)}</div>
-            {tab === 'data' && <div className="detail-section"><div className="section-intro"><h2>Данные бита</h2><p>Основные параметры проекта.</p></div><div className="data-card"><div><span>НАЗВАНИЕ</span><strong>{selected.title}</strong></div><div><span>ТЕМП</span><strong>{selected.bpm} BPM</strong></div><div><span>ТОНАЛЬНОСТЬ</span><strong>{selected.key}</strong></div><div><span>ТЕГИ</span><strong>{selected.tags}</strong></div></div><p className="detail-footnote">{selected.cloud ? 'MP3 и обложка хранятся в облаке.' : 'Редактирование данных добавим в следующей версии интерфейса.'}</p>{!selected.isDemo && <div className="delete-beat">{cloudAvailable && !selected.cloud && <button onClick={migrateBeat} disabled={savingBeat}><UploadCloud size={16} /> {savingBeat ? 'Переносим…' : 'Перенести в облако'}</button>}{confirmDelete ? <><p>Удалить «{selected.title}» вместе с аудио и обложкой {selected.cloud ? 'из облака' : 'с этого устройства'}?</p><div><button onClick={() => setConfirmDelete(false)}>Отмена</button><button className="delete-beat-confirm" onClick={deleteBeat} disabled={deleting}>Подтвердить удаление</button></div></> : <button onClick={() => setConfirmDelete(true)}><Trash2 size={16} /> Удалить бит</button>}</div>}</div>}
+            {tab === 'data' && <div className="detail-section"><div className="section-intro"><h2>Данные бита</h2><p>Основные параметры проекта.</p></div><div className="data-card"><div><span>НАЗВАНИЕ</span><strong>{selected.title}</strong></div><div><span>ТЕМП</span><strong>{selected.bpm} BPM</strong></div><div><span>ТОНАЛЬНОСТЬ</span><strong>{selected.key}</strong></div><div><span>ТЕГИ</span><strong>{selected.tags}</strong></div></div>{!selected.isDemo && <label className="upload-zone cover-edit"><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void changeCover(event.target.files?.[0])} /><ImagePlus size={22} /><strong>Изменить обложку</strong><span>{selected.cloud ? 'Для облачной обложки открой локальный бит' : 'JPG, PNG или WEBP'}</span></label>}<p className="detail-footnote">Описание и подпись редактируются во вкладке «Публикация». {selected.cloud ? 'MP3 и обложка хранятся в облаке.' : ''}</p>{!selected.isDemo && <div className="delete-beat">{cloudAvailable && !selected.cloud && <button onClick={migrateBeat} disabled={savingBeat}><UploadCloud size={16} /> {savingBeat ? 'Переносим…' : 'Перенести в облако'}</button>}{confirmDelete ? <><p>Удалить «{selected.title}» вместе с аудио и обложкой {selected.cloud ? 'из облака' : 'с этого устройства'}?</p><div><button onClick={() => setConfirmDelete(false)}>Отмена</button><button className="delete-beat-confirm" onClick={deleteBeat} disabled={deleting}>Подтвердить удаление</button></div></> : <button onClick={() => setConfirmDelete(true)}><Trash2 size={16} /> Удалить бит</button>}</div>}</div>}
             {tab === 'publication' && <div className="detail-section">
               <div className="section-intro"><h2>Публикация</h2><p>Подстрой тексты под площадку и скопируй готовый вариант.</p></div>
               <div className="platform-switch" role="tablist" aria-label="Площадка"><button role="tab" aria-selected={publicationPlatform === 'telegram'} className={publicationPlatform === 'telegram' ? 'is-active' : ''} onClick={() => setPublicationPlatform('telegram')}>Telegram</button><button role="tab" aria-selected={publicationPlatform === 'youtube'} className={publicationPlatform === 'youtube' ? 'is-active' : ''} onClick={() => setPublicationPlatform('youtube')}>YouTube</button></div>
