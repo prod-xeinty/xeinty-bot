@@ -79,6 +79,15 @@ export async function saveBeatMetadata(beat: StoredBeat): Promise<void> {
   await finished
 }
 
+export async function saveBeatCover(id: string, coverFile: File): Promise<void> {
+  const db = await database()
+  const transaction = db.transaction('files', 'readwrite')
+  const store = transaction.objectStore('files')
+  const current = await request(store.get(id) as IDBRequest<StoredFiles | undefined>)
+  store.put({ ...current, id, coverFile })
+  await completed(transaction)
+}
+
 export async function deleteStoredBeat(id: string): Promise<void> {
   const db = await database()
   const transaction = db.transaction(['beats', 'files'], 'readwrite')
