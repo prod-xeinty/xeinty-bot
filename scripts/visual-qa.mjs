@@ -37,6 +37,10 @@ for (const [name, width, height] of [['mobile', 390, 844], ['desktop', 1440, 900
   await page.getByRole('tab', { name: 'Публикация' }).click()
   await page.getByRole('textbox', { name: 'Подпись для Telegram' }).fill('Тестовая подпись')
   if (await page.getByRole('textbox', { name: 'Подпись для Telegram' }).inputValue() !== 'Тестовая подпись') throw new Error('Caption edit failed')
+  if (width <= 600) {
+    await page.getByRole('tab', { name: 'YouTube' }).click()
+    await page.screenshot({ path: `docs/design/${name}-youtube.png`, fullPage: true })
+  }
   await page.getByRole('textbox', { name: 'Ключевые слова YouTube' }).fill('new type beat, test')
   if (await page.getByRole('textbox', { name: 'Ключевые слова YouTube' }).inputValue() !== 'new type beat, test') throw new Error('Keywords edit failed')
   await page.getByRole('button', { name: 'XEINTY — к библиотеке' }).click()

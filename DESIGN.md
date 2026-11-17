@@ -45,11 +45,11 @@ components:
 
 ## Overview
 
-XEINTY feels like a compact music device: a nearly black workspace, one pale player surface, tactile graphite controls and monochrome project artwork. The design follows the user's reference image while keeping the actual beatmaker workflow and honest demo states.
+XEINTY feels like a compact music device in studio light: a nearly black workspace, a luminous silver player, sculpted graphite controls and monochrome project artwork. The design follows the user's reference image while keeping the actual beatmaker workflow and honest demo states.
 
 ## Colors
 
-The canvas and work panels use a neutral graphite ramp. The light current-beat card and upload action carry the contrast. Text has three roles: near white for content, mid gray for supporting copy and dark ink on light surfaces. There are no colored glows or gradients.
+The canvas and work panels use a neutral graphite ramp. The current-beat card and upload action carry the brightest silver. Text has three roles: near white for content, mid gray for supporting copy and dark ink on light surfaces. Directional neutral highlights create depth; there are no colored glows.
 
 ## Typography
 
@@ -57,11 +57,11 @@ Manrope is used throughout, including Cyrillic headings, track names, labels and
 
 ## Layout
 
-Desktop uses a 216px rail and a content column capped at 870px. Below 840px the rail disappears. Mobile uses a single column with 16px side padding and a floating three-item dock above Telegram safe-area insets. The order is current beat, work steps, new-bit action, recent projects.
+Desktop uses a 216px rail and a content column capped at 870px. Below 840px the rail disappears. Mobile uses a single column with 16px side padding, two functional header controls and a floating three-item dock above Telegram safe-area insets. The order is current beat, work steps, new-bit action, recent projects.
 
 ## Elevation & Depth
 
-Graphite surface steps and thin translucent borders create depth. The light player has a mild vertical tonal shift; tool tiles have restrained top highlights and shadows to suggest physical controls. Motion is limited to a short screen entrance and interaction feedback.
+Graphite surface steps, metallic edge highlights and soft dark shadows create depth. The player has a bright shoulder and darker silver underside. Tool tiles use directional neutral illumination and bevels to suggest physical controls. Motion is limited to a short screen entrance and interaction feedback.
 
 ## Shapes
 
@@ -69,11 +69,11 @@ The light player has 24px corners, work panels 18–22px, small controls 9–12p
 
 ## Components
 
-The featured player shows the current beat, a decorative demo waveform, an audio availability state and an action to open the beat. A disabled play control clearly communicates unavailable demo audio. Work tiles open the real Data, Publication and Links tabs. The upload action opens the working new-bit form. Recent projects remain a compact list rather than a grid of cards.
+The featured project shows a cover, a decorative demo waveform, an audio availability state and an action to open the beat. Demo projects offer a publication shortcut instead of a false play control; a real uploaded audio file enables playback. Work tiles open the real Data, Publication and Links tabs. The upload action opens the working new-bit form. Recent demo projects use small waveform thumbnails; uploaded beats retain their real cover.
 
 ## Do's and Don'ts
 
 - Keep sample data and local-only state explicit.
 - Use a bright surface only for the current project or the main new-bit action.
 - Keep controls meaningful and keyboard focus visible.
-- Do not show fake statistics, pretend to publish to external services or make demo waveforms look like live playback.
+- Do not show fake statistics, pretend to publish to external services or attach a playable control to a demo with no audio.

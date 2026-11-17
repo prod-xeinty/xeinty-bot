@@ -27,8 +27,9 @@ function projectCount(count: number) {
   return `${count} ${form === 'one' ? 'проект' : form === 'few' ? 'проекта' : 'проектов'}`
 }
 
-function Waveform({ light = false }: { light?: boolean }) {
-  return <div className={`waveform ${light ? 'waveform--light' : ''}`} aria-hidden="true">{waveHeights.map((height, index) => <i key={index} style={{ height }} />)}</div>
+function Waveform({ light = false, compact = false }: { light?: boolean; compact?: boolean }) {
+  const heights = compact ? waveHeights.filter((_, index) => index % 2 === 0) : waveHeights
+  return <div className={`waveform ${light ? 'waveform--light' : ''} ${compact ? 'waveform--compact' : ''}`} aria-hidden="true">{heights.map((height, index) => <i key={index} style={{ height: compact ? Math.max(7, height * .55) : height }} />)}</div>
 }
 
 function App() {
@@ -42,6 +43,7 @@ function App() {
   const [audioFile, setAudioFile] = useState<File | null>(null)
   const [coverFile, setCoverFile] = useState<File | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
+  const [publicationPlatform, setPublicationPlatform] = useState<'telegram' | 'youtube'>('telegram')
   const playerRef = useRef<HTMLAudioElement>(null)
   const selected = beats.find((beat) => beat.id === selectedId) ?? beats[0]
   const latest = beats[0]
@@ -71,7 +73,7 @@ function App() {
     setScreen(next)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
-  function openBeat(beat: Beat, nextTab: DetailTab = 'publication') { setSelectedId(beat.id); setTab(nextTab); navigate('detail') }
+  function openBeat(beat: Beat, nextTab: DetailTab = 'publication') { setSelectedId(beat.id); setTab(nextTab); setPublicationPlatform('telegram'); navigate('detail') }
   function updateBeat(patch: Partial<Beat>) { setBeats((all) => all.map((beat) => beat.id === selected.id ? { ...beat, ...patch } : beat)) }
   function togglePreview() {
     if (!latest.audioUrl || !playerRef.current) return
@@ -106,23 +108,22 @@ function App() {
 
   return <div className="app-shell">
     <div className="app-frame">
-      <header className="topbar"><button className="wordmark" onClick={() => navigate('library')} aria-label="XEINTY — к библиотеке">Xeinty</button><span className="topbar-note">Студия битмейкера</span><span className="topbar-badge">Демо-версия</span></header>
+      <header className="topbar"><button className="topbar-action topbar-create" onClick={() => navigate('create')} aria-label="Добавить новый бит"><Plus size={20} /></button><button className="wordmark" onClick={() => navigate('library')} aria-label="XEINTY — к библиотеке">Xeinty</button><span className="topbar-note">Студия битмейкера</span><span className="topbar-badge">Демо-версия</span><button className="topbar-action topbar-overview" onClick={() => navigate('overview')} aria-label="Открыть обзор"><AudioLines size={19} /></button></header>
       <div className="workspace">
         <aside className="desktop-rail" aria-label="Навигация"><div className="rail-head"><strong>Рабочее пространство</strong><span>Биты и публикации</span></div><nav>{nav.map(({ id, label, Icon }) => <button key={id} className={screen === id || (screen === 'detail' && id === 'library') ? 'is-active' : ''} onClick={() => navigate(id)}><Icon size={19} />{label}<ChevronRight size={16} /></button>)}</nav><div className="rail-footer"><AudioLines size={18} /><span>Один бит — все материалы для его публикации.</span></div></aside>
         <main className="main-content" key={screen}>
           {screen === 'library' && <>
-            <div className="page-heading heading-library"><div><h1>Мои биты</h1><p>От черновика до публикации</p></div><span className="library-count">{projectCount(beats.length)}</span></div>
+            <div className="library-context"><span>Текущий проект</span><span>{projectCount(beats.length)}</span></div>
             <section className="feature-section" aria-label="Текущий бит">
               <div className="feature-card">
-                <div className="player-top"><Cover beat={latest} className="feature-cover" /><div className="feature-content"><span className="feature-status">{latest.isDemo ? 'Демо-проект' : latest.status}</span><h2>{latest.title}</h2><p>{latest.bpm} BPM <span>·</span> {latest.key}</p></div><button className="player-open" onClick={() => openBeat(latest)} aria-label={`Открыть ${latest.title}`}><ChevronRight size={19} /></button></div>
-                <Waveform light />
-                <div className="player-footer"><span>{latest.audioUrl ? latest.audioName : 'Аудио не загружено'}</span><div className="player-controls"><button className="player-play" onClick={togglePreview} disabled={!latest.audioUrl} aria-label={isPlaying ? 'Пауза' : 'Воспроизвести'} title={latest.audioUrl ? 'Предпрослушать бит' : 'Для демо-бита нет аудио'}>{isPlaying ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}</button><button className="player-next" onClick={() => openBeat(latest)}>Открыть бит <ArrowRight size={16} /></button></div></div>
+                <div className="player-top"><Cover beat={latest} className="feature-cover" /><div className="feature-content"><span className="feature-status">{latest.isDemo ? 'Демо-проект' : latest.status}</span><h2>{latest.title}</h2><p>{latest.bpm} BPM <span>·</span> {latest.key}</p><Waveform light /></div><button className="player-open" onClick={() => openBeat(latest)} aria-label={`Открыть ${latest.title}`}><ChevronRight size={19} /></button></div>
+                <div className="player-footer"><span>{latest.audioUrl ? latest.audioName : 'Аудио не загружено'}</span><div className="player-controls">{latest.audioUrl ? <button className="player-play" onClick={togglePreview} aria-label={isPlaying ? 'Пауза' : 'Воспроизвести'} title="Предпрослушать бит">{isPlaying ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}</button> : <button className="player-publish" onClick={() => openBeat(latest, 'publication')} aria-label="Открыть тексты для публикации"><Send size={16} /><span>Тексты</span></button>}<button className="player-next" onClick={() => openBeat(latest)}>Открыть бит <ArrowRight size={16} /></button></div></div>
                 {latest.audioUrl && <audio key={latest.id} ref={playerRef} src={latest.audioUrl} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} onEnded={() => setIsPlaying(false)} preload="metadata" />}
               </div>
             </section>
             <section className="tools-section"><div className="section-heading"><h2>Рабочие шаги</h2></div><div className="tool-grid"><button onClick={() => openBeat(latest, 'data')}><ListMusic size={20} /><span>Параметры</span></button><button onClick={() => openBeat(latest, 'publication')}><Clipboard size={20} /><span>Публикация</span></button><button onClick={() => openBeat(latest, 'links')}><Link2 size={20} /><span>Ссылки</span></button></div></section>
             <button className="upload-banner" onClick={() => navigate('create')}><span className="upload-banner-icon"><UploadCloud size={23} /></span><span><strong>Добавить свой бит</strong><small>Обложка, аудио, BPM и теги</small></span><span className="upload-banner-arrow"><ArrowRight size={18} /></span></button>
-            <section className="list-section"><div className="list-header"><div><h2>Недавние проекты</h2></div><span className="demo-pill">{beats.every((beat) => beat.isDemo) ? 'Демо' : 'Демо и черновики'}</span></div><div className="beat-list">{beats.map((beat) => <button className="beat-row" key={beat.id} onClick={() => openBeat(beat)}><Cover beat={beat} className="row-cover" /><span className="row-main"><strong>{beat.title}</strong><small>{beat.bpm} BPM · {beat.key}</small></span><span className="row-meta">{beat.status}</span><ArrowRight className="row-arrow" size={18} /></button>)}</div><p className="demo-note"><CircleHelp size={15} /> Примеры показывают интерфейс. Новые биты доступны только в этой сессии.</p></section>
+            <section className="list-section"><div className="list-header"><div><h2>Недавние проекты</h2></div><span className="demo-pill">{beats.every((beat) => beat.isDemo) ? 'Демо' : 'Демо и черновики'}</span></div><div className="beat-list">{beats.map((beat) => <button className="beat-row" key={beat.id} onClick={() => openBeat(beat)}>{beat.isDemo ? <span className="row-wave"><Waveform compact /></span> : <Cover beat={beat} className="row-cover" />}<span className="row-main"><strong>{beat.title}</strong><small>{beat.bpm} BPM · {beat.key}</small></span><span className="row-meta">{beat.status}</span><ArrowRight className="row-arrow" size={18} /></button>)}</div><p className="demo-note"><CircleHelp size={15} /> Примеры показывают интерфейс. Новые биты доступны только в этой сессии.</p></section>
           </>}
           {screen === 'create' && <>
             <div className="page-heading"><div><h1>Новый бит</h1><p>Добавь параметры, обложку и аудио для предпросмотра.</p></div></div>
@@ -139,9 +140,10 @@ function App() {
             {tab === 'data' && <div className="detail-section"><div className="section-intro"><h2>Данные бита</h2><p>Основные параметры проекта.</p></div><div className="data-card"><div><span>НАЗВАНИЕ</span><strong>{selected.title}</strong></div><div><span>ТЕМП</span><strong>{selected.bpm} BPM</strong></div><div><span>ТОНАЛЬНОСТЬ</span><strong>{selected.key}</strong></div><div><span>ТЕГИ</span><strong>{selected.tags}</strong></div></div><p className="detail-footnote">Редактирование данных добавим в следующей версии интерфейса.</p></div>}
             {tab === 'publication' && <div className="detail-section">
               <div className="section-intro"><h2>Публикация</h2><p>Подстрой тексты под площадку и скопируй готовый вариант.</p></div>
+              <div className="platform-switch" role="tablist" aria-label="Площадка"><button role="tab" aria-selected={publicationPlatform === 'telegram'} className={publicationPlatform === 'telegram' ? 'is-active' : ''} onClick={() => setPublicationPlatform('telegram')}>Telegram</button><button role="tab" aria-selected={publicationPlatform === 'youtube'} className={publicationPlatform === 'youtube' ? 'is-active' : ''} onClick={() => setPublicationPlatform('youtube')}>YouTube</button></div>
               <div className="publication-grid">
-                <div className="publication-card"><div className="publication-card-head"><div className="platform-icon telegram-icon"><Send size={20} /></div><div><span>TELEGRAM</span><h3>Подпись к посту</h3></div></div><textarea aria-label="Подпись для Telegram" value={selected.telegramCaption} onChange={(e) => updateBeat({ telegramCaption: e.target.value })} /><button className="copy-button" onClick={() => copyText(selected.telegramCaption, 'Текст Telegram')}><Clipboard size={16} /> Скопировать текст <ArrowRight size={16} /></button></div>
-                <div className="publication-card"><div className="publication-card-head"><div className="platform-icon youtube-icon">▶</div><div><span>YOUTUBE</span><h3>Описание видео</h3></div></div><textarea aria-label="Описание для YouTube" value={selected.youtubeDescription} onChange={(e) => updateBeat({ youtubeDescription: e.target.value })} /><button className="copy-button" onClick={() => copyText(selected.youtubeDescription, 'Описание YouTube')}><Clipboard size={16} /> Скопировать описание <ArrowRight size={16} /></button><label className="keywords-field"><span>КЛЮЧЕВЫЕ СЛОВА</span><input aria-label="Ключевые слова YouTube" value={selected.youtubeKeywords} onChange={(e) => updateBeat({ youtubeKeywords: e.target.value })} /></label><button className="copy-button copy-button--subtle" onClick={() => copyText(selected.youtubeKeywords, 'Ключевые слова')}><Clipboard size={16} /> Скопировать ключевые слова <ArrowRight size={16} /></button></div>
+                <div className={`publication-card ${publicationPlatform === 'telegram' ? 'is-current' : ''}`}><div className="publication-card-head"><div className="platform-icon telegram-icon"><Send size={20} /></div><div><span>TELEGRAM</span><h3>Подпись к посту</h3></div></div><textarea aria-label="Подпись для Telegram" value={selected.telegramCaption} onChange={(e) => updateBeat({ telegramCaption: e.target.value })} /><button className="copy-button" onClick={() => copyText(selected.telegramCaption, 'Текст Telegram')}><Clipboard size={16} /> Скопировать текст <ArrowRight size={16} /></button></div>
+                <div className={`publication-card ${publicationPlatform === 'youtube' ? 'is-current' : ''}`}><div className="publication-card-head"><div className="platform-icon youtube-icon">▶</div><div><span>YOUTUBE</span><h3>Описание видео</h3></div></div><textarea aria-label="Описание для YouTube" value={selected.youtubeDescription} onChange={(e) => updateBeat({ youtubeDescription: e.target.value })} /><button className="copy-button" onClick={() => copyText(selected.youtubeDescription, 'Описание YouTube')}><Clipboard size={16} /> Скопировать описание <ArrowRight size={16} /></button><label className="keywords-field"><span>КЛЮЧЕВЫЕ СЛОВА</span><input aria-label="Ключевые слова YouTube" value={selected.youtubeKeywords} onChange={(e) => updateBeat({ youtubeKeywords: e.target.value })} /></label><button className="copy-button copy-button--subtle" onClick={() => copyText(selected.youtubeKeywords, 'Ключевые слова')}><Clipboard size={16} /> Скопировать ключевые слова <ArrowRight size={16} /></button></div>
               </div>
               <div className="next-feature"><div className="next-feature-icon"><ImagePlus size={22} /></div><div><strong>Видео из обложки и аудио</strong><p>Автоматическая сборка статичного видео появится на следующем этапе.</p></div><span>СКОРО</span></div>
             </div>}

@@ -4,8 +4,8 @@
   "title": "Design System: XEINTY",
   "extensions": {
     "shadows": [
-      { "name": "player", "value": "0 12px 34px #00000043, inset 0 1px 0 #fff", "purpose": "A restrained physical lift for the featured player." },
-      { "name": "tool", "value": "inset 0 1px 0 #ffffff3b, 0 8px 14px #0003", "purpose": "A small tactile step on work controls." }
+      { "name": "player", "value": "inset 0 2px 2px #fff, inset 0 -4px 7px #77777730, 0 0 0 1px #777777, 0 18px 35px #00000091, 0 30px 55px #00000039", "purpose": "The focal silver player is lifted and beveled." },
+      { "name": "tool", "value": "inset 0 2px 0 #ffffffa1, inset 0 -2px 7px #05050599, 0 0 0 1px #0008, 0 10px 16px #0009", "purpose": "Directional light gives work controls physical depth." }
     ],
     "motion": [
       { "name": "screen-entry", "value": "300ms cubic-bezier(.2,.8,.2,1)", "purpose": "A short screen transition." },
@@ -35,8 +35,8 @@
   ],
   "narrative": {
     "northStar": "A compact music device",
-    "overview": "A nearly black workspace with a pale current-beat player and tactile graphite controls.",
-    "keyCharacteristics": ["Monochrome editorial artwork", "One bright player surface", "Physical control tiles", "Compact project rows"],
+    "overview": "A nearly black workspace with a luminous silver current-beat player, sculpted graphite controls and restrained studio light.",
+    "keyCharacteristics": ["Monochrome editorial artwork", "Bright silver player", "Beveled work controls", "Waveform project thumbnails"],
     "rules": [
       { "name": "Current beat first", "body": "The current project leads; actions and recent projects follow in work order.", "section": "layout" }
     ],
