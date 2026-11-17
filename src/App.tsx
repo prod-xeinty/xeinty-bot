@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowLeft, ArrowRight, AudioLines, Check, ChevronRight, CircleHelp, Clipboard, Disc3, ExternalLink, FileAudio2, ImagePlus, Link2, ListMusic, Music2, Pause, Play, Plus, Radio, Send, UploadCloud } from 'lucide-react'
+import { ArrowLeft, ArrowRight, AudioLines, Check, ChevronRight, CircleHelp, Clipboard, Disc3, Download, ExternalLink, FileAudio2, ImagePlus, Link2, ListMusic, Music2, Pause, Play, Plus, Radio, Send, UploadCloud } from 'lucide-react'
 import { getTelegramWebApp } from './telegram'
+import { makeStaticVideo, type VideoStage } from './video'
 
 type Screen = 'library' | 'create' | 'overview' | 'detail'
 type DetailTab = 'data' | 'publication' | 'links'
 type Beat = {
   id: string; title: string; bpm: string; key: string; tags: string; status: string
-  cover: number; coverUrl?: string; audioUrl?: string; audioName?: string
+  cover: number; coverUrl?: string; audioUrl?: string; audioName?: string; audioFile?: File; coverFile?: File
   telegramCaption: string; youtubeDescription: string; youtubeKeywords: string; telegramLink: string; youtubeLink: string; isDemo?: boolean
 }
 
@@ -44,6 +45,10 @@ function App() {
   const [coverFile, setCoverFile] = useState<File | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const [publicationPlatform, setPublicationPlatform] = useState<'telegram' | 'youtube'>('telegram')
+  const [videoStage, setVideoStage] = useState<VideoStage | null>(null)
+  const [videoError, setVideoError] = useState('')
+  const [videoResult, setVideoResult] = useState<{ beatId: string; url: string; size: number; seconds: number } | null>(null)
+  const videoUrlRef = useRef<string | null>(null)
   const playerRef = useRef<HTMLAudioElement>(null)
   const selected = beats.find((beat) => beat.id === selectedId) ?? beats[0]
   const latest = beats[0]
@@ -66,6 +71,8 @@ function App() {
     webApp.ready()
   }, [webApp])
 
+  useEffect(() => () => { if (videoUrlRef.current) URL.revokeObjectURL(videoUrlRef.current) }, [])
+
   function notify(message: string) { setToast(message); window.setTimeout(() => setToast(''), 3500) }
   function navigate(next: Screen) {
     playerRef.current?.pause()
@@ -84,6 +91,23 @@ function App() {
     try { await navigator.clipboard.writeText(value); notify(`${label} скопирован`) }
     catch { notify('Не удалось скопировать. Выдели текст вручную.') }
   }
+  async function createVideo() {
+    if (!selected.audioFile || !selected.coverFile || videoStage) return
+    setVideoError('')
+    const started = performance.now()
+    try {
+      const blob = await makeStaticVideo(selected.audioFile, selected.coverFile, setVideoStage)
+      if (videoUrlRef.current) URL.revokeObjectURL(videoUrlRef.current)
+      const url = URL.createObjectURL(blob)
+      videoUrlRef.current = url
+      setVideoResult({ beatId: selected.id, url, size: blob.size, seconds: Math.round((performance.now() - started) / 1000) })
+    } catch (error) {
+      console.error('Video export failed:', error)
+      setVideoError(error instanceof Error ? error.message : typeof error === 'string' ? error : 'Не удалось собрать видео на этом устройстве')
+    } finally {
+      setVideoStage(null)
+    }
+  }
   function addBeat(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!form.title.trim()) return
@@ -91,7 +115,7 @@ function App() {
       id: `beat-${Date.now()}`, title: form.title.trim().toUpperCase(), bpm: form.bpm || '—', key: form.key || '—',
       tags: form.tags.trim() || 'без тегов', status: 'Черновик', cover: 0,
       coverUrl: coverFile ? URL.createObjectURL(coverFile) : undefined,
-      audioUrl: audioFile ? URL.createObjectURL(audioFile) : undefined, audioName: audioFile?.name,
+      audioUrl: audioFile ? URL.createObjectURL(audioFile) : undefined, audioName: audioFile?.name, audioFile: audioFile ?? undefined, coverFile: coverFile ?? undefined,
       telegramCaption: `${form.title.trim().toUpperCase()} — ${form.bpm || '—'} BPM / ${form.key || '—'}\n\n${form.tags.trim() || '#typebeat'}`,
       youtubeDescription: `${form.title.trim().toUpperCase()} | Type Beat\n\nBPM: ${form.bpm || '—'} · Key: ${form.key || '—'}\n\nДля связи: @yourname`,
       youtubeKeywords: form.tags.trim().replaceAll(' · ', ', '), telegramLink: '', youtubeLink: '',
@@ -145,7 +169,14 @@ function App() {
                 <div className={`publication-card ${publicationPlatform === 'telegram' ? 'is-current' : ''}`}><div className="publication-card-head"><div className="platform-icon telegram-icon"><Send size={20} /></div><div><span>TELEGRAM</span><h3>Подпись к посту</h3></div></div><textarea aria-label="Подпись для Telegram" value={selected.telegramCaption} onChange={(e) => updateBeat({ telegramCaption: e.target.value })} /><button className="copy-button" onClick={() => copyText(selected.telegramCaption, 'Текст Telegram')}><Clipboard size={16} /> Скопировать текст <ArrowRight size={16} /></button></div>
                 <div className={`publication-card ${publicationPlatform === 'youtube' ? 'is-current' : ''}`}><div className="publication-card-head"><div className="platform-icon youtube-icon">▶</div><div><span>YOUTUBE</span><h3>Описание видео</h3></div></div><textarea aria-label="Описание для YouTube" value={selected.youtubeDescription} onChange={(e) => updateBeat({ youtubeDescription: e.target.value })} /><button className="copy-button" onClick={() => copyText(selected.youtubeDescription, 'Описание YouTube')}><Clipboard size={16} /> Скопировать описание <ArrowRight size={16} /></button><label className="keywords-field"><span>КЛЮЧЕВЫЕ СЛОВА</span><input aria-label="Ключевые слова YouTube" value={selected.youtubeKeywords} onChange={(e) => updateBeat({ youtubeKeywords: e.target.value })} /></label><button className="copy-button copy-button--subtle" onClick={() => copyText(selected.youtubeKeywords, 'Ключевые слова')}><Clipboard size={16} /> Скопировать ключевые слова <ArrowRight size={16} /></button></div>
               </div>
-              <div className="next-feature"><div className="next-feature-icon"><ImagePlus size={22} /></div><div><strong>Видео из обложки и аудио</strong><p>Автоматическая сборка статичного видео появится на следующем этапе.</p></div><span>СКОРО</span></div>
+              <div className="video-tool"><div className="video-tool-head"><div className="next-feature-icon"><ImagePlus size={22} /></div><div><strong>Видео из обложки и аудио</strong><p>Пробная сборка MP4 16:9 на твоём устройстве. Файлы не отправляются на сервер.</p></div></div>
+                {selected.audioFile && selected.coverFile ? <>
+                  <button className="primary-button video-action" onClick={createVideo} disabled={videoStage !== null}>{videoStage ? 'Сборка идёт…' : 'Собрать MP4'} {!videoStage && <ArrowRight size={18} />}</button>
+                  {videoStage && <p className="video-status" role="status">{videoStage === 'loading' ? 'Загружаем видеодвижок — около 31 МБ…' : videoStage === 'preparing' ? 'Подготавливаем файлы…' : 'Собираем видео. Не закрывай Telegram…'}</p>}
+                  {videoError && <p className="video-error" role="alert">{videoError}</p>}
+                  {videoResult?.beatId === selected.id && <div className="video-result"><video src={videoResult.url} controls playsInline preload="metadata" aria-label={`Готовое видео ${selected.title}`} /><p>MP4 · {(videoResult.size / 1024 / 1024).toFixed(1)} МБ · сборка {videoResult.seconds} с</p><a className="video-download" href={videoResult.url} download={`${selected.title.replace(/[^a-z0-9а-яё-]+/gi, '-').toLowerCase()}.mp4`}><Download size={17} /> Скачать MP4</a></div>}
+                </> : <p className="video-hint">Для проверки создай новый бит и добавь к нему обложку и MP3 или WAV. Демо-биты без файлов собрать нельзя.</p>}
+              </div>
             </div>}
             {tab === 'links' && <div className="detail-section"><div className="section-intro"><h2>Ссылки</h2><p>Адреса опубликованных поста и видео.</p></div><div className="links-panel"><label className="field"><span>ПОСТ В TELEGRAM</span><div className="link-input"><Link2 size={18} /><input type="url" placeholder="https://t.me/yourchannel/123" value={selected.telegramLink} onChange={(e) => updateBeat({ telegramLink: e.target.value })} />{selected.telegramLink && <a href={selected.telegramLink} target="_blank" rel="noreferrer" aria-label="Открыть Telegram"><ExternalLink size={17} /></a>}</div></label><label className="field"><span>ВИДЕО НА YOUTUBE</span><div className="link-input"><Link2 size={18} /><input type="url" placeholder="https://youtube.com/watch?v=..." value={selected.youtubeLink} onChange={(e) => updateBeat({ youtubeLink: e.target.value })} />{selected.youtubeLink && <a href={selected.youtubeLink} target="_blank" rel="noreferrer" aria-label="Открыть YouTube"><ExternalLink size={17} /></a>}</div></label><p className="form-hint">Пока ссылки сохраняются только до закрытия приложения.</p></div></div>}
           </>}
