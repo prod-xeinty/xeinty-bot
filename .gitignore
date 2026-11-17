@@ -3,3 +3,7 @@ dist/
 .env.local
 .env.*.local
 *.tsbuildinfo
+.impeccable-cache/
+.chrome-qa*/
+.edge-qa/
+docs/design/*.png
