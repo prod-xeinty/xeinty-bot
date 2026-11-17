@@ -15,8 +15,9 @@ function sampleWav() {
   return buffer
 }
 
-const server = await createServer({ server: { host: '127.0.0.1', port: 0 } })
-await server.listen()
+const server = process.env.VIDEO_QA_URL ? null : await createServer({ server: { host: '127.0.0.1', port: 0 } })
+if (server) await server.listen()
+const url = process.env.VIDEO_QA_URL || `http://127.0.0.1:${server.httpServer.address().port}/`
 const browser = await chromium.launch({ channel: 'chrome', headless: true })
 const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
 const errors = []
@@ -25,7 +26,7 @@ page.on('console', (message) => { if (message.type() === 'error') errors.push(me
 page.on('requestfailed', (request) => errors.push(`${request.url()}: ${request.failure()?.errorText}`))
 await page.route('https://telegram.org/**', (route) => route.fulfill({ status: 200, contentType: 'application/javascript', body: '' }))
 try {
-  await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/`)
+  await page.goto(url)
   await page.getByRole('button', { name: /Добавить свой бит/ }).click()
   await page.getByPlaceholder('Например, NO SIGNAL').fill('Test Video')
   await page.locator('input[type=file][accept^="audio/"]').setInputFiles({ name: 'tone.wav', mimeType: 'audio/wav', buffer: sampleWav() })
@@ -52,5 +53,5 @@ try {
   console.log(JSON.stringify(result))
 } finally {
   await browser.close()
-  await server.close()
+  if (server) await server.close()
 }
