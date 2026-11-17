@@ -176,8 +176,10 @@ input, textarea { caret-color: #fff; }
 .video-result { display: grid; gap: 10px; }
 .video-result video { width: min(100%, 520px); aspect-ratio: 16/9; border-radius: 10px; background: #080808; }
 .video-result p { margin: 0; color: #aaa; font-size: 12px; }
-.video-download { width: fit-content; display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; border: 1px solid #ffffff55; border-radius: 9px; color: #f5f5f4; font-size: 12px; font-weight: 650; text-decoration: none; }
+.video-save-actions { display: flex; flex-wrap: wrap; gap: 9px; }
+.video-download { width: fit-content; display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; border: 1px solid #ffffff55; border-radius: 9px; color: #f5f5f4; background: #ffffff17; font-size: 12px; font-weight: 650; text-decoration: none; cursor: pointer; }
 .video-download:hover { background: #ffffff16; }
+.video-download--secondary { color: #aaa; background: transparent; }
 .links-panel { max-width: 650px; display: grid; gap: 18px; }
 .field { display: grid; gap: 8px; }
 .field > span { color: #b0b0b0; font-size: 12px; }

@@ -21,6 +21,12 @@ const url = process.env.VIDEO_QA_URL || `http://127.0.0.1:${server.httpServer.ad
 const browser = await chromium.launch({ channel: 'chrome', headless: true })
 const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
 const errors = []
+await page.addInitScript(() => {
+  window.showSaveFilePicker = async (options) => {
+    window.__savedVideoName = options.suggestedName
+    return { createWritable: async () => ({ write: async (blob) => { window.__savedVideoBytes = blob.size }, close: async () => {} }) }
+  }
+})
 page.on('pageerror', (error) => errors.push(error.message))
 page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()) })
 page.on('requestfailed', (request) => errors.push(`${request.url()}: ${request.failure()?.errorText}`))
@@ -35,7 +41,7 @@ try {
   await page.getByRole('tab', { name: 'Публикация' }).click()
   await page.getByRole('button', { name: 'Собрать MP4' }).click()
   try {
-    await page.getByRole('link', { name: 'Скачать MP4' }).waitFor({ timeout: 30000 })
+    await page.getByRole('button', { name: 'Сохранить MP4' }).waitFor({ timeout: 30000 })
   } catch {
     throw new Error(`Video state: ${await page.locator('.video-tool').innerText()}\n${errors.join('\n')}`)
   }
@@ -49,6 +55,10 @@ try {
     return { width: video.videoWidth, height: video.videoHeight, duration: video.duration, bytes: data.length, header: text.slice(4, 8), hasAudio: text.includes('soun') }
   })
   if (result.width !== 960 || result.height !== 540 || result.duration < 2.5 || result.duration > 3.5 || result.header !== 'ftyp' || !result.hasAudio) throw new Error(`Invalid MP4: ${JSON.stringify(result)}`)
+  await page.getByRole('button', { name: 'Сохранить MP4' }).click()
+  await page.waitForFunction(() => window.__savedVideoBytes > 0)
+  const saved = await page.evaluate(() => ({ name: window.__savedVideoName, bytes: window.__savedVideoBytes }))
+  if (saved.name !== 'test-video.mp4' || saved.bytes !== result.bytes) throw new Error(`Save failed: ${JSON.stringify(saved)}`)
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(JSON.stringify(result))
 } finally {

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft, ArrowRight, AudioLines, Check, ChevronRight, CircleHelp, Clipboard, Disc3, Download, ExternalLink, FileAudio2, ImagePlus, Link2, ListMusic, Music2, Pause, Play, Plus, Radio, Send, UploadCloud } from 'lucide-react'
 import { getTelegramWebApp } from './telegram'
 import { makeStaticVideo, type VideoStage } from './video'
+import { saveVideoFile } from './save-video'
 
 type Screen = 'library' | 'create' | 'overview' | 'detail'
 type DetailTab = 'data' | 'publication' | 'links'
@@ -47,7 +48,7 @@ function App() {
   const [publicationPlatform, setPublicationPlatform] = useState<'telegram' | 'youtube'>('telegram')
   const [videoStage, setVideoStage] = useState<VideoStage | null>(null)
   const [videoError, setVideoError] = useState('')
-  const [videoResult, setVideoResult] = useState<{ beatId: string; url: string; size: number; seconds: number } | null>(null)
+  const [videoResult, setVideoResult] = useState<{ beatId: string; url: string; blob: Blob; size: number; seconds: number } | null>(null)
   const videoUrlRef = useRef<string | null>(null)
   const playerRef = useRef<HTMLAudioElement>(null)
   const selected = beats.find((beat) => beat.id === selectedId) ?? beats[0]
@@ -100,12 +101,25 @@ function App() {
       if (videoUrlRef.current) URL.revokeObjectURL(videoUrlRef.current)
       const url = URL.createObjectURL(blob)
       videoUrlRef.current = url
-      setVideoResult({ beatId: selected.id, url, size: blob.size, seconds: Math.round((performance.now() - started) / 1000) })
+      setVideoResult({ beatId: selected.id, url, blob, size: blob.size, seconds: Math.round((performance.now() - started) / 1000) })
     } catch (error) {
       console.error('Video export failed:', error)
       setVideoError(error instanceof Error ? error.message : typeof error === 'string' ? error : 'Не удалось собрать видео на этом устройстве')
     } finally {
       setVideoStage(null)
+    }
+  }
+  async function saveVideo() {
+    if (!videoResult || videoResult.beatId !== selected.id) return
+    setVideoError('')
+    const filename = `${selected.title.replace(/[^a-z0-9а-яё-]+/gi, '-').toLowerCase()}.mp4`
+    try {
+      const result = await saveVideoFile(videoResult.blob, filename)
+      if (result === 'saved') notify('MP4 сохранён в выбранную папку')
+      if (result === 'unsupported') setVideoError('Окно сохранения недоступно в этом Telegram. Попробуй «Обычная загрузка» или открой XEINTY в браузере.')
+    } catch (error) {
+      console.error('Video save failed:', error)
+      setVideoError('Не удалось открыть окно сохранения. Попробуй «Обычная загрузка» или открой XEINTY в браузере.')
     }
   }
   function addBeat(event: React.FormEvent<HTMLFormElement>) {
@@ -174,7 +188,7 @@ function App() {
                   <button className="primary-button video-action" onClick={createVideo} disabled={videoStage !== null}>{videoStage ? 'Сборка идёт…' : 'Собрать MP4'} {!videoStage && <ArrowRight size={18} />}</button>
                   {videoStage && <p className="video-status" role="status">{videoStage === 'loading' ? 'Загружаем видеодвижок — около 31 МБ…' : videoStage === 'preparing' ? 'Подготавливаем файлы…' : 'Собираем видео. Не закрывай Telegram…'}</p>}
                   {videoError && <p className="video-error" role="alert">{videoError}</p>}
-                  {videoResult?.beatId === selected.id && <div className="video-result"><video src={videoResult.url} controls playsInline preload="metadata" aria-label={`Готовое видео ${selected.title}`} /><p>MP4 · {(videoResult.size / 1024 / 1024).toFixed(1)} МБ · сборка {videoResult.seconds} с</p><a className="video-download" href={videoResult.url} download={`${selected.title.replace(/[^a-z0-9а-яё-]+/gi, '-').toLowerCase()}.mp4`}><Download size={17} /> Скачать MP4</a></div>}
+                  {videoResult?.beatId === selected.id && <div className="video-result"><video src={videoResult.url} controls playsInline preload="metadata" aria-label={`Готовое видео ${selected.title}`} /><p>MP4 · {(videoResult.size / 1024 / 1024).toFixed(1)} МБ · сборка {videoResult.seconds} с</p><div className="video-save-actions"><button className="video-download" onClick={saveVideo}><Download size={17} /> Сохранить MP4</button><a className="video-download video-download--secondary" href={videoResult.url} download={`${selected.title.replace(/[^a-z0-9а-яё-]+/gi, '-').toLowerCase()}.mp4`}>Обычная загрузка</a></div></div>}
                 </> : <p className="video-hint">Для проверки создай новый бит и добавь к нему обложку и MP3 или WAV. Демо-биты без файлов собрать нельзя.</p>}
               </div>
             </div>}
