@@ -21,7 +21,8 @@ Users work on a phone inside Telegram as well as in a regular browser during dev
 ## Capabilities and Constraints
 
 - Current deployed version is a static React/TypeScript shell on GitHub Pages at `https://prod-xeinty.github.io/xeinty-bot/`.
-- No cloud database, audio storage, or authenticated write operations have been connected yet. A local static-cover MP4 prototype is available and still needs testing in Telegram on Android and iPhone with real audio.
+- Beats, audio, cover files, copy, and links are stored in IndexedDB on the current device. There is no cloud database, cross-device sync, or authenticated write access. Clearing Telegram/browser website data may remove local beats.
+- Local static-cover MP4 export is available. The creator confirmed generation and saving in Telegram Desktop and saving on iPhone; Android and large WAV files still need testing.
 - The interface may demonstrate workflows locally, but must clearly distinguish demonstration data from saved user data.
 - No payment card or paid infrastructure is available for the pilot.
 - Telegram user data read in the browser is display-only until a server verifies `initData`.

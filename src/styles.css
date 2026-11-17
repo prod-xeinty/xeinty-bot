@@ -148,6 +148,12 @@ input, textarea { caret-color: #fff; }
 .data-card span { color: #a1a1a2; font-size: 11px; }
 .data-card strong { font-size: 13px; font-weight: 600; }
 .detail-footnote, .form-hint { color: #a1a1a2; font-size: 12px; line-height: 1.5; }
+.delete-beat { margin-top: 20px; padding-top: 16px; border-top: 1px solid #ffffff24; }
+.delete-beat p { margin: 0 0 12px; color: #d3d3d3; font-size: 12px; line-height: 1.5; }
+.delete-beat > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.delete-beat button { min-height: 38px; display: inline-flex; align-items: center; gap: 8px; padding: 0 12px; border: 1px solid #ffffff33; border-radius: 9px; background: #29292a; color: #ddd; font-size: 12px; }
+.delete-beat .delete-beat-confirm { border-color: #9b504b; color: #ffd2ce; }
+.delete-beat button:disabled { opacity: .5; }
 .publication-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .platform-switch { display: none; }
 .publication-card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
