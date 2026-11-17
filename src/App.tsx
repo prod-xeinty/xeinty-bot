@@ -80,7 +80,8 @@ function App() {
     if (!webApp) return
     webApp.setHeaderColor?.('#151520')
     webApp.setBackgroundColor?.('#151520')
-    webApp.expand()
+    if (webApp.requestFullscreen) webApp.requestFullscreen()
+    else webApp.expand()
     webApp.ready()
   }, [webApp])
 
