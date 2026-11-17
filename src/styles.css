@@ -143,6 +143,10 @@ input, textarea { caret-color: #fff; }
 .section-intro p { margin: 0; color: #a3a3a4; font-size: 12px; line-height: 1.5; }
 .data-card, .publication-card, .links-panel, .form-panel { padding: 20px; border: 1px solid #ffffff52; border-radius: 20px; background: radial-gradient(ellipse at 20% -50%, #3e3e3f, #1b1b1c 70%); box-shadow: inset 0 1px 0 #ffffff45, 0 12px 24px #0006; }
 .data-card { display: grid; grid-template-columns: repeat(2, 1fr); }
+.data-card--editable { gap: 0 18px; }
+.data-card--editable .field { padding: 14px 4px; border-bottom: 1px solid #ffffff19; }
+.data-card--editable .field:nth-last-child(-n+2) { border-bottom: 0; }
+.data-card--editable .field input { height: 40px; padding: 0 10px; }
 .data-card > div { display: grid; gap: 6px; padding: 16px 4px; border-bottom: 1px solid #ffffff19; }
 .data-card > div:nth-last-child(-n+2) { border: 0; }
 .data-card span { color: #a1a1a2; font-size: 11px; }
