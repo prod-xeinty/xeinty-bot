@@ -199,6 +199,27 @@ Deno.serve(async (request) => {
       return reply({ id: body.id }, 201, origin)
     }
 
+    if (action === 'prepare-cover' || action === 'commit-cover') {
+      const owned = await db.from('beats').select('id,cover_path').eq('id', body.id).eq('telegram_user_id', userId).maybeSingle()
+      if (owned.error) throw owned.error
+      if (!owned.data) return reply({ error: 'Бит не найден' }, 404, origin)
+      if (action === 'prepare-cover') {
+        const extensions: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }
+        if (!extensions[body.type] || !Number.isInteger(body.size) || body.size < 1 || body.size > maxCoverSize) return reply({ error: 'Нужна обложка JPG, PNG или WEBP до 2 МБ' }, 400, origin)
+        const path = `${userId}/${owned.data.id}/cover-${crypto.randomUUID()}.${extensions[body.type]}`
+        const upload = await db.storage.from(bucket).createSignedUploadUrl(path)
+        if (upload.error) throw upload.error
+        return reply({ path, token: upload.data.token }, 200, origin)
+      }
+      if (typeof body.path !== 'string' || !body.path.startsWith(`${userId}/${owned.data.id}/cover-`) || !/^\d+\/[0-9a-f-]+\/cover-[0-9a-f-]+\.(jpg|png|webp)$/.test(body.path)) return reply({ error: 'Некорректный путь обложки' }, 400, origin)
+      const info = await db.storage.from(bucket).info(body.path)
+      if (info.error || !info.data || info.data.size < 1 || info.data.size > maxCoverSize) return reply({ error: 'Обложка не загружена или слишком большая' }, 400, origin)
+      const updated = await db.from('beats').update({ cover_path: body.path, updated_at: new Date().toISOString() }).eq('id', body.id).eq('telegram_user_id', userId)
+      if (updated.error) throw updated.error
+      if (owned.data.cover_path) await db.storage.from(bucket).remove([owned.data.cover_path])
+      return reply({ ok: true }, 200, origin)
+    }
+
     if (action === 'update') {
       const beat = input(body.beat)
       if (!beat || typeof body.id !== 'string') return reply({ error: 'Некорректные данные бита' }, 400, origin)
