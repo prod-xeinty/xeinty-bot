@@ -1,82 +1,79 @@
 ---
 name: XEINTY
-description: Dark music studio for beatmakers
+description: A monochrome music workspace for beatmakers
 colors:
-  canvas: "#151520"
-  surface: "#211f2c"
-  field: "#171722"
-  text: "#f3f0f4"
-  muted: "#a6a2b3"
-  lilac: "#a999df"
-  lilac-hover: "#c5b5f3"
-  peach: "#e6aa85"
+  canvas: "#0d0d0e"
+  panel: "#1b1b1c"
+  raised: "#303032"
+  field: "#111112"
+  light-panel: "#eeeeec"
+  text: "#f4f4f2"
+  secondary-text: "#a2a2a3"
+  ink: "#141414"
 typography:
   display:
     fontFamily: "Manrope Variable, sans-serif"
-    fontSize: "clamp(54px, 5.2vw, 76px)"
-    fontWeight: 800
-    lineHeight: 1.02
-    letterSpacing: "-0.075em"
-  track:
-    fontFamily: "Barlow Condensed, sans-serif"
-    fontSize: "clamp(46px, 5.5vw, 80px)"
-    fontWeight: 800
-    lineHeight: 0.9
+    fontSize: "clamp(28px, 3vw, 36px)"
+    fontWeight: 600
+    lineHeight: 1.15
+    letterSpacing: "-0.045em"
   body:
     fontFamily: "Manrope Variable, sans-serif"
-    fontSize: "14px"
+    fontSize: "13px"
     fontWeight: 400
-    lineHeight: 1.6
+    lineHeight: 1.5
+  label:
+    fontFamily: "Manrope Variable, sans-serif"
+    fontSize: "12px"
+    fontWeight: 500
 rounded:
-  control: "9px"
-  panel: "15px"
-  feature: "19px"
+  control: "10px"
+  card: "18px"
+  feature: "24px"
 spacing:
   tight: "8px"
   regular: "16px"
-  section: "42px"
+  section: "24px"
 components:
   button-primary:
-    backgroundColor: "{colors.lilac}"
-    textColor: "{colors.canvas}"
+    backgroundColor: "{colors.light-panel}"
+    textColor: "{colors.ink}"
     rounded: "{rounded.control}"
-    height: "48px"
-    padding: "0 18px"
-  button-primary-hover:
-    backgroundColor: "{colors.lilac-hover}"
+    height: "44px"
+    padding: "0 16px"
 ---
 
 ## Overview
 
-XEINTY uses a dark, quiet studio canvas with luminous violet and warm peach accents. Abstract covers carry the strongest color. The interface groups work into distinct rounded panels and keeps the next action visible. The visuals are informed by the supplied dark music-player and dashboard references.
+XEINTY feels like a compact music device: a nearly black workspace, one pale player surface, tactile graphite controls and monochrome project artwork. The design follows the user's reference image while keeping the actual beatmaker workflow and honest demo states.
 
 ## Colors
 
-Canvas and field surfaces are deep navy-violet. Lilac marks primary actions and selected navigation. Peach is a small highlight in artwork and brand details. White is reserved for titles and important values; supporting copy is muted violet-gray.
+The canvas and work panels use a neutral graphite ramp. The light current-beat card and upload action carry the contrast. Text has three roles: near white for content, mid gray for supporting copy and dark ink on light surfaces. There are no colored glows or gradients.
 
 ## Typography
 
-Manrope is used for Cyrillic headings, labels, body text and controls. Barlow Condensed is used for Latin track titles and the XEINTY wordmark. Large headings are dense and tightly tracked; body copy stays compact but legible.
+Manrope is used throughout, including Cyrillic headings, track names, labels and controls. Page titles are 27–36px and medium weight; sections are 16–22px. Small metadata is at least 11px, while mobile text inputs are 16px to avoid zoom and improve legibility.
 
 ## Layout
 
-The main desktop area has a 230px side rail and a flexible content column inside a 1320px frame. At 900px the rail disappears. At 600px the app becomes a single column with a fixed bottom navigation that respects Telegram safe-area insets. The library feature moves from a side-by-side cover and details to a stacked card.
+Desktop uses a 216px rail and a content column capped at 870px. Below 840px the rail disappears. Mobile uses a single column with 16px side padding and a floating three-item dock above Telegram safe-area insets. The order is current beat, work steps, new-bit action, recent projects.
 
 ## Elevation & Depth
 
-Depth comes from violet radial light, translucent gradient panels, fine light borders and soft dark shadows. A mild backdrop blur is used on panels and mobile navigation. Keep controls visually quieter than the cover art.
+Graphite surface steps and thin translucent borders create depth. The light player has a mild vertical tonal shift; tool tiles have restrained top highlights and shadows to suggest physical controls. Motion is limited to a short screen entrance and interaction feedback.
 
 ## Shapes
 
-Panels use 15–19px corners, controls 7–9px corners, and status labels are pills. Cover artwork is clipped to the card. Avoid sharp rectangular feature panels.
+The light player has 24px corners, work panels 18–22px, small controls 9–12px. The project artwork has its own smaller radius within the player. Rounded shapes form a hierarchy, not a blanket pill treatment.
 
 ## Components
 
-The primary button is lilac with dark text and a short hover lift. Beat rows use artwork, title, tags, BPM/key and a right arrow. Publication cards use platform labels, editable text and copy actions. Forms use dark inset fields with a visible lilac keyboard focus ring.
+The featured player shows the current beat, a decorative demo waveform, an audio availability state and an action to open the beat. A disabled play control clearly communicates unavailable demo audio. Work tiles open the real Data, Publication and Links tabs. The upload action opens the working new-bit form. Recent projects remain a compact list rather than a grid of cards.
 
 ## Do's and Don'ts
 
-- Keep demo records clearly identified and future integrations marked as future work.
-- Use motion for page entry, hover feedback and soft ambient light; respect reduced-motion settings.
-- Keep each screen focused on one task and preserve generous space around the main artwork.
-- Do not imply that audio, links or edits are stored remotely until a backend is connected.
+- Keep sample data and local-only state explicit.
+- Use a bright surface only for the current project or the main new-bit action.
+- Keep controls meaningful and keyboard focus visible.
+- Do not show fake statistics, pretend to publish to external services or make demo waveforms look like live playback.

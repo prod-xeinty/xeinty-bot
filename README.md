@@ -28,3 +28,5 @@ node scripts/visual-qa.mjs
 ## Публикация
 
 Workflow `.github/workflows/deploy.yml` публикует ветку `main` на GitHub Pages с путём `/xeinty-bot/`. Адрес приложения: [prod-xeinty.github.io/xeinty-bot](https://prod-xeinty.github.io/xeinty-bot/). Он уже указан в настройках Mini App бота [@xeintybot](https://t.me/xeintybot).
+
+Визуальная ревизия выполнена с помощью [Unslop](https://github.com/heydamir/unslop) by Damir Sokolovsky, CC BY 4.0, с опорой на предоставленный автором проекта референс.
