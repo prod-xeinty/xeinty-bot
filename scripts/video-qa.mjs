@@ -59,6 +59,18 @@ try {
   await page.waitForFunction(() => window.__savedVideoBytes > 0)
   const saved = await page.evaluate(() => ({ name: window.__savedVideoName, bytes: window.__savedVideoBytes }))
   if (saved.name !== 'test-video.mp4' || saved.bytes !== result.bytes) throw new Error(`Save failed: ${JSON.stringify(saved)}`)
+  await page.evaluate(() => {
+    delete window.showSaveFilePicker
+    Object.defineProperty(navigator, 'canShare', { configurable: true, value: ({ files }) => files?.length === 1 })
+    Object.defineProperty(navigator, 'share', { configurable: true, value: async ({ files }) => {
+      window.__sharedVideoName = files[0].name
+      window.__sharedVideoBytes = files[0].size
+    } })
+  })
+  await page.getByRole('button', { name: 'Сохранить MP4' }).click()
+  await page.waitForFunction(() => window.__sharedVideoBytes > 0, null, { timeout: 5000 })
+  const shared = await page.evaluate(() => ({ name: window.__sharedVideoName, bytes: window.__sharedVideoBytes }))
+  if (shared.name !== 'test-video.mp4' || shared.bytes !== result.bytes) throw new Error(`Share failed: ${JSON.stringify(shared)}`)
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(JSON.stringify(result))
 } finally {

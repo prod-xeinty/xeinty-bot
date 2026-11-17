@@ -116,10 +116,11 @@ function App() {
     try {
       const result = await saveVideoFile(videoResult.blob, filename)
       if (result === 'saved') notify('MP4 сохранён в выбранную папку')
-      if (result === 'unsupported') setVideoError('Окно сохранения недоступно в этом Telegram. Попробуй «Обычная загрузка» или открой XEINTY в браузере.')
+      if (result === 'shared') notify('В меню выбери «Сохранить в Файлы»')
+      if (result === 'unsupported') setVideoError('Сохранение файлов недоступно в этом Telegram. Попробуй «Обычная загрузка» или открой XEINTY в браузере.')
     } catch (error) {
       console.error('Video save failed:', error)
-      setVideoError('Не удалось открыть окно сохранения. Попробуй «Обычная загрузка» или открой XEINTY в браузере.')
+      setVideoError('Не удалось открыть меню сохранения. Попробуй «Обычная загрузка» или открой XEINTY в браузере.')
     }
   }
   function addBeat(event: React.FormEvent<HTMLFormElement>) {
