@@ -63,6 +63,12 @@ export async function updateCloudBeat(initData: string, beat: StoredBeat): Promi
   await call(initData, 'update', { id: beat.id, beat })
 }
 
+export async function replaceCloudCover(initData: string, id: string, file: File): Promise<void> {
+  const plan = await call<{ path: string; token: string }>(initData, 'prepare-cover', { id, type: file.type, size: file.size })
+  await signedUpload(plan.path, plan.token, file)
+  await call(initData, 'commit-cover', { id, path: plan.path })
+}
+
 export async function deleteCloudBeat(initData: string, id: string): Promise<void> {
   await call(initData, 'delete', { id })
 }
