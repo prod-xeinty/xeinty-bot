@@ -41,7 +41,7 @@ try {
   await page.getByRole('tab', { name: 'Публикация' }).click()
   await page.getByRole('button', { name: 'Собрать MP4' }).click()
   try {
-    await page.getByRole('button', { name: 'Сохранить MP4' }).waitFor({ timeout: 30000 })
+    await page.getByRole('button', { name: 'Сохранить MP4' }).waitFor({ timeout: process.env.VIDEO_QA_URL ? 90000 : 30000 })
   } catch {
     throw new Error(`Video state: ${await page.locator('.video-tool').innerText()}\n${errors.join('\n')}`)
   }
