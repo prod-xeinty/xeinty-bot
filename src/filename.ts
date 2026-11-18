@@ -24,8 +24,9 @@ export function parseAudioName(filename: string): ParsedAudioName {
   }
 
   const tagMatches = [...name.matchAll(/(?:^|\s)(@[\w.]+|#[\wа-яё]+|prod\.?\s*(?:by\s+)?[\w.-]+)/gi)]
-  const tags = tagMatches.map((match) => match[1]).join(' · ')
+  const tags = tagMatches.map((match) => match[1]).filter((tag) => !/^(?:@|#|prod\.?\s*(?:by\s+)?)?xeinty$/i.test(tag)).join(' · ')
   for (const match of tagMatches) name = name.replace(match[0], ' ')
+  name = name.replace(/(?:^|\s)xeinty\s*$/i, ' ')
   const title = name.replace(/[()[\]{}]/g, ' ').replace(/\s*[-–—|]+\s*/g, ' ').replace(/\s+/g, ' ').trim() || filename.replace(/\.[^.]+$/, '')
   return { title, bpm, key, tags }
 }

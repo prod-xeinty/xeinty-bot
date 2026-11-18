@@ -57,7 +57,7 @@ Manrope is used throughout, including Cyrillic headings, track names, labels and
 
 ## Layout
 
-Desktop uses a 216px rail and a content column capped at 870px. Below 840px the rail disappears. Mobile uses a single column with 16px side padding, two functional header controls and a floating three-item dock above Telegram safe-area insets. The order is current beat, work steps, new-bit action, recent projects.
+Desktop uses a 216px rail and a content column capped at 870px. Below 840px the rail disappears. Mobile uses a single column with 16px side padding, two functional header controls and a floating four-item dock above Telegram safe-area insets. The dock opens Bиты, Создать, Публикация and Обзор.
 
 ## Elevation & Depth
 
@@ -69,7 +69,7 @@ The light player has 24px corners, work panels 18–22px, small controls 9–12p
 
 ## Components
 
-The featured project shows a cover, a decorative demo waveform, an audio availability state and an action to open the beat. Demo projects offer a publication shortcut instead of a false play control; a real uploaded audio file enables playback. Work tiles open the real Data, Publication and Links tabs. The upload action opens the working new-bit form. Recent demo projects use small waveform thumbnails; uploaded beats retain their real cover.
+The featured project shows a cover, a decorative demo waveform, an audio availability state and an action to open the beat. Demo projects offer a publication shortcut instead of a false play control; a real uploaded audio file enables playback. The publication workspace holds a single-beat selector with Telegram and YouTube editors and video export, plus a Telegram-only batch mode. Beat detail holds data, a read-only description view, and an honest statistics state with publication links. The upload action opens the working new-bit form. Recent demo projects use small waveform thumbnails; uploaded beats retain their real cover.
 
 ## Do's and Don'ts
 
