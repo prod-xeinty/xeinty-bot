@@ -67,6 +67,7 @@ function App() {
   const [audioFile, setAudioFile] = useState<File | null>(null)
   const [batchFiles, setBatchFiles] = useState<File[]>([])
   const [batchCaption, setBatchCaption] = useState('')
+  const [batchCoverFile, setBatchCoverFile] = useState<File | null>(null)
   const [includeTelegramCover, setIncludeTelegramCover] = useState(() => localStorage.getItem('xeinty-telegram-cover') !== 'false')
   const [coverFile, setCoverFile] = useState<File | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
@@ -361,7 +362,7 @@ function App() {
               <label className="upload-zone"><input type="file" multiple accept=".mp3,.wav,audio/mpeg,audio/wav" onChange={(event) => chooseBatch(Array.from(event.target.files ?? []))} /><FileAudio2 size={26} /><strong>{batchFiles.length ? `${batchFiles.length} аудиофайлов` : 'Выбрать аудиофайлы'}</strong><span>Названия файлов разберу автоматически</span></label>
               {batchFiles.length > 0 && <ol className="batch-file-list">{batchFiles.map((file, index) => <li key={`${index}-${file.name}`}>{file.name}</li>)}</ol>}
               <label className="batch-cover-toggle"><input type="checkbox" checked={includeTelegramCover} onChange={(event) => toggleTelegramCover(event.target.checked)} /><span>Прикладывать обложку к посту</span></label>
-              {includeTelegramCover && <label className="upload-zone"><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setCoverFile(event.target.files?.[0] ?? null)} /><ImagePlus size={24} /><strong>{coverFile?.name ?? 'Общая обложка'}</strong><span>Необязательно · JPG, PNG или WEBP</span></label>}
+              {includeTelegramCover && <label className="upload-zone"><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setBatchCoverFile(event.target.files?.[0] ?? null)} /><ImagePlus size={24} /><strong>{batchCoverFile?.name ?? 'Общая обложка'}</strong><span>Необязательно · JPG, PNG или WEBP</span></label>}
               <label className="field"><span>ПОДПИСЬ К ПОСТУ</span><textarea className="batch-caption" value={batchCaption} onChange={(event) => setBatchCaption(event.target.value)} placeholder="Выбери аудиофайлы — подпись появится здесь" /></label>
               <div className="batch-actions"><button className="copy-button" disabled={!batchCaption} onClick={() => copyText(batchCaption, 'Подпись пачки')}><Clipboard size={16} /> Скопировать подпись</button><button className="copy-button" disabled={!batchCaption} onClick={() => shareTelegramText(batchCaption)}><Send size={16} /> Выбрать чат в Telegram</button></div>
               <p className="form-hint">После выбора канала приложи аудиофайлы. Telegram объединит их в альбом. Фото-обложку отправь рядом отдельным сообщением: Telegram не смешивает фото и аудио в одном альбоме. Подпись можно поправить перед отправкой.</p>
