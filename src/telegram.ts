@@ -19,6 +19,7 @@ export type TelegramWebApp = {
   themeParams: TelegramTheme
   ready: () => void
   expand: () => void
+  openTelegramLink?: (url: string) => void
   requestFullscreen?: () => void
   onEvent: (event: 'themeChanged', callback: () => void) => void
   offEvent: (event: 'themeChanged', callback: () => void) => void
