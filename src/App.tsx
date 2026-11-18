@@ -9,7 +9,7 @@ import { canonicalKeyOptions, normalizeMusicKey } from './music-key'
 import { parseAudioName, telegramLine } from './filename'
 
 type Screen = 'library' | 'create' | 'publish' | 'overview' | 'detail'
-type DetailTab = 'data' | 'description' | 'stats'
+type DetailTab = 'data' | 'stats'
 type Beat = Omit<StoredBeat, 'createdAt'> & {
   createdAt?: number; cover: number; coverUrl?: string; audioUrl?: string; audioFile?: File; coverFile?: File; isDemo?: boolean; cloud?: boolean
 }
@@ -67,6 +67,7 @@ function App() {
   const [toast, setToast] = useState('')
   const [form, setForm] = useState({ title: '', bpm: '', key: '', tags: '' })
   const [audioFile, setAudioFile] = useState<File | null>(null)
+  const [batchSelectedIds, setBatchSelectedIds] = useState<string[]>([])
   const [batchFiles, setBatchFiles] = useState<File[]>([])
   const [batchCaption, setBatchCaption] = useState('')
   const [batchCoverFile, setBatchCoverFile] = useState<File | null>(null)
@@ -86,6 +87,7 @@ function App() {
   const cloudSaveTimersRef = useRef(new Map<string, number>())
   const selected = beats.find((beat) => beat.id === selectedId) ?? beats[0]
   const latest = beats[0]
+  const savedAudioBeats = beats.filter((beat) => !beat.isDemo && (beat.audioFile || beat.audioUrl))
   const cloudAvailable = cloudConfigured() && Boolean(webApp?.initData)
 
   function toggleTelegramCover(enabled: boolean) {
@@ -101,9 +103,25 @@ function App() {
     }
   }
 
+  function batchText(ids: string[], files: File[]) {
+    const saved = ids.flatMap((id) => {
+      const beat = beats.find((item) => item.id === id)
+      return beat ? [telegramLine({ title: beat.title, bpm: beat.bpm === '—' ? '' : beat.bpm, key: beat.key === '—' ? '' : beat.key, tags: beat.tags === 'без тегов' ? '' : beat.tags })] : []
+    })
+    return [...saved, ...files.map((file) => telegramLine(parseAudioName(file.name)))].map((line, index) => `${index + 1}. ${line}`).join('\n')
+  }
+
+  function toggleBatchBeat(id: string) {
+    const next = batchSelectedIds.includes(id) ? batchSelectedIds.filter((item) => item !== id) : [...batchSelectedIds, id]
+    if (next.length + batchFiles.length > 10) { notify('В одну пачку можно добавить не больше 10 аудиофайлов'); return }
+    setBatchSelectedIds(next)
+    setBatchCaption(batchText(next, batchFiles))
+  }
+
   function chooseBatch(files: File[]) {
+    if (batchSelectedIds.length + files.length > 10) { notify('В одну пачку можно добавить не больше 10 аудиофайлов'); return }
     setBatchFiles(files)
-    setBatchCaption(files.map((file, index) => `${index + 1}. ${telegramLine(parseAudioName(file.name))}`).join('\n'))
+    setBatchCaption(batchText(batchSelectedIds, files))
   }
 
   useEffect(() => {
@@ -398,13 +416,16 @@ function App() {
             {publishMode === 'batch' && <>
               <div className="section-intro"><h2>Пачка битов</h2><p>Несколько аудиофайлов для одного альбома Telegram.</p></div>
             <div className="form-panel batch-panel">
-              <label className="upload-zone"><input type="file" multiple accept=".mp3,.wav,audio/mpeg,audio/wav" onChange={(event) => chooseBatch(Array.from(event.target.files ?? []))} /><FileAudio2 size={26} /><strong>{batchFiles.length ? `${batchFiles.length} аудиофайлов` : 'Выбрать аудиофайлы'}</strong><span>Названия файлов разберу автоматически</span></label>
+              <div className="batch-library"><div className="batch-library-head"><strong>Выбрать из библиотеки</strong><span>{batchSelectedIds.length + batchFiles.length} / 10</span></div>
+                {savedAudioBeats.length ? <div className="batch-beat-list">{savedAudioBeats.map((beat) => <button type="button" key={beat.id} className={batchSelectedIds.includes(beat.id) ? 'is-active' : ''} aria-pressed={batchSelectedIds.includes(beat.id)} onClick={() => toggleBatchBeat(beat.id)}><Cover beat={beat} className="publish-beat-cover" /><span><strong>{beat.title}</strong><small>{beat.bpm} BPM · {beat.key}</small></span><Check size={17} /></button>)}</div> : <div className="batch-library-empty"><p>В библиотеке пока нет битов с аудиофайлом.</p><button type="button" onClick={() => navigate('create')}>Добавить бит <ArrowRight size={15} /></button></div>}
+              </div>
+              <div className="batch-import"><span>ИЛИ ДОБАВЬ С УСТРОЙСТВА</span><label className="upload-zone"><input type="file" multiple accept=".mp3,.wav,audio/mpeg,audio/wav" onChange={(event) => chooseBatch(Array.from(event.target.files ?? []))} /><FileAudio2 size={26} /><strong>{batchFiles.length ? `${batchFiles.length} аудиофайлов` : 'Выбрать аудиофайлы'}</strong><span>Названия файлов разберу автоматически</span></label></div>
               {batchFiles.length > 0 && <ol className="batch-file-list">{batchFiles.map((file, index) => <li key={`${index}-${file.name}`}>{file.name}</li>)}</ol>}
               <label className="batch-cover-toggle"><input type="checkbox" checked={includeTelegramCover} onChange={(event) => toggleTelegramCover(event.target.checked)} /><span>Прикладывать обложку к посту</span></label>
               {includeTelegramCover && <label className="upload-zone"><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setBatchCoverFile(event.target.files?.[0] ?? null)} /><ImagePlus size={24} /><strong>{batchCoverFile?.name ?? 'Общая обложка'}</strong><span>Необязательно · JPG, PNG или WEBP</span></label>}
-              <label className="field"><span>ПОДПИСЬ К ПОСТУ</span><textarea className="batch-caption" value={batchCaption} onChange={(event) => setBatchCaption(event.target.value)} placeholder="Выбери аудиофайлы — подпись появится здесь" /></label>
+              <label className="field"><span>ПОДПИСЬ К ПОСТУ</span><textarea className="batch-caption" value={batchCaption} onChange={(event) => setBatchCaption(event.target.value)} placeholder="Выбери биты — подпись появится здесь" /></label>
               <div className="batch-actions"><button className="copy-button" disabled={!batchCaption} onClick={() => copyText(batchCaption, 'Подпись пачки')}><Clipboard size={16} /> Скопировать подпись</button><button className="copy-button" disabled={!batchCaption} onClick={() => shareTelegramText(batchCaption)}><Send size={16} /> Выбрать чат в Telegram</button></div>
-              <p className="form-hint">После выбора канала приложи аудиофайлы. Telegram объединит их в альбом. Фото-обложку отправь рядом отдельным сообщением: Telegram не смешивает фото и аудио в одном альбоме. Подпись можно поправить перед отправкой.</p>
+              <p className="form-hint">Из библиотеки берутся данные для подписи. Аудиофайлы пока нужно приложить в Telegram вручную. Telegram объединит их в альбом; фото-обложка отправляется отдельным сообщением.</p>
             </div>
             </>}
           </>}
@@ -413,9 +434,8 @@ function App() {
           </>}
           {screen === 'detail' && selected && <>
             <button className="back-link" onClick={() => navigate('library')}><ArrowLeft size={17} /> Все биты</button><section className="detail-hero"><Cover beat={selected} className="detail-cover" /><div className="detail-identity"><div className="eyebrow">{selected.isDemo ? 'Демо-проект' : 'Черновик'}</div><h1>{selected.title}</h1><p>{selected.tags}</p><div className="meta-row"><span>{selected.bpm} BPM</span><i /><span>{selected.key}</span></div><div className="detail-audio">{selected.audioUrl ? <><FileAudio2 size={17} /><span>{selected.audioName}</span><audio src={selected.audioUrl} controls preload="metadata" /></> : <><Music2 size={18} /><span>{selected.isDemo ? 'Аудио для этого демо-бита не загружено' : 'Аудиофайл не добавлен'}</span></>}</div></div></section>
-            <div className="detail-tabs" role="tablist" aria-label="Разделы бита">{([['data', 'Данные'], ['description', 'Описание'], ['stats', 'Статистика']] as [DetailTab, string][]).map(([id, label]) => <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? 'is-active' : ''} onClick={() => setTab(id)}>{label}</button>)}</div>
+            <div className="detail-tabs" role="tablist" aria-label="Разделы бита">{([['data', 'Данные'], ['stats', 'Статистика']] as [DetailTab, string][]).map(([id, label]) => <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? 'is-active' : ''} onClick={() => setTab(id)}>{label}</button>)}</div>
             {tab === 'data' && <div className="detail-section"><div className="section-intro"><h2>Данные бита</h2><p>Изменения сохраняются автоматически.</p></div><div className="data-card data-card--editable"><label className="field"><span>НАЗВАНИЕ</span><input aria-label="Название бита" maxLength={120} value={selected.title} onChange={(event) => updateBeat({ title: event.target.value })} /></label><label className="field"><span>ТЕМП (BPM)</span><input aria-label="Темп BPM" type="number" min="1" max="300" value={selected.bpm === '—' ? '' : selected.bpm} onChange={(event) => updateBeat({ bpm: event.target.value || '—' })} /></label><label className="field"><span>ТОНАЛЬНОСТЬ</span><KeyPicker value={selected.key} label="Тональность бита" onChange={(key) => updateBeat({ key })} onCommit={(value) => { const key = normalizeMusicKey(value); if (key !== null) updateBeat({ key: key || "—" }); else { updateBeat({ key: "—" }); notify("Не распознал тональность; выбери вариант из списка.") } }} /></label><label className="field"><span>ТЕГИ</span><input aria-label="Теги бита" value={selected.tags} onChange={(event) => updateBeat({ tags: event.target.value })} /></label></div>{!selected.isDemo && <label className="upload-zone cover-edit"><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void changeCover(event.target.files?.[0])} /><ImagePlus size={22} /><strong>Изменить обложку</strong><span>JPG, PNG или WEBP до 2 МБ</span></label>}<p className="detail-footnote">Подписи для площадок редактируются в разделе «Публикация». {selected.cloud ? 'MP3 и обложка хранятся в облаке.' : ''}</p>{!selected.isDemo && <div className="delete-beat">{cloudAvailable && !selected.cloud && <button onClick={migrateBeat} disabled={savingBeat}><UploadCloud size={16} /> {savingBeat ? 'Переносим…' : 'Перенести в облако'}</button>}{confirmDelete ? <><p>Удалить «{selected.title}» вместе с аудио и обложкой {selected.cloud ? 'из облака' : 'с этого устройства'}?</p><div><button onClick={() => setConfirmDelete(false)}>Отмена</button><button className="delete-beat-confirm" onClick={deleteBeat} disabled={deleting}>Подтвердить удаление</button></div></> : <button onClick={() => setConfirmDelete(true)}><Trash2 size={16} /> Удалить бит</button>}</div>}</div>}
-            {tab === 'description' && <div className="detail-section"><div className="section-intro"><h2>Описание</h2><p>Тексты этого бита для Telegram и YouTube.</p></div><div className="description-grid"><div className="description-card"><span>TELEGRAM</span><p>{selected.telegramCaption || 'Описание ещё не добавлено.'}</p></div><div className="description-card"><span>YOUTUBE</span><p>{selected.youtubeDescription || 'Описание ещё не добавлено.'}</p></div></div><button className="outline-button description-edit" onClick={() => openPublish(selected)}>Изменить тексты <ArrowRight size={17} /></button></div>}
             {tab === 'stats' && <div className="detail-section"><div className="section-intro"><h2>Статистика</h2><p>Публикации этого бита и их показатели.</p></div><div className="links-panel"><div className="stats-notice"><Radio size={20} /><div><strong>{selected.telegramLink || selected.youtubeLink ? 'Публикации добавлены' : 'Публикаций пока нет'}</strong><p>{selected.telegramLink || selected.youtubeLink ? 'Ссылки сохранены. Подсчёт просмотров появится после подключения Telegram и YouTube.' : 'После публикации добавь ссылку на пост или видео. Просмотры пока не подключены.'}</p></div></div><label className="field"><span>ПОСТ В TELEGRAM</span><div className="link-input"><Link2 size={18} /><input type="url" placeholder="https://t.me/yourchannel/123" value={selected.telegramLink} onChange={(e) => updateBeat({ telegramLink: e.target.value })} />{selected.telegramLink && <a href={selected.telegramLink} target="_blank" rel="noreferrer" aria-label="Открыть Telegram"><ExternalLink size={17} /></a>}</div></label><label className="field"><span>ВИДЕО НА YOUTUBE</span><div className="link-input"><Link2 size={18} /><input type="url" placeholder="https://youtube.com/watch?v=..." value={selected.youtubeLink} onChange={(e) => updateBeat({ youtubeLink: e.target.value })} />{selected.youtubeLink && <a href={selected.youtubeLink} target="_blank" rel="noreferrer" aria-label="Открыть YouTube"><ExternalLink size={17} /></a>}</div></label><p className="form-hint">{selected.cloud ? 'Ссылки сохраняются в облаке.' : 'Ссылки сохраняются на этом устройстве.'}</p></div></div>}
           </>}
         </main>

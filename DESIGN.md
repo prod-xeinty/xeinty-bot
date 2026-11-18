@@ -69,7 +69,7 @@ The light player has 24px corners, work panels 18–22px, small controls 9–12p
 
 ## Components
 
-The featured project shows a cover, a decorative demo waveform, an audio availability state and an action to open the beat. Demo projects offer a publication shortcut instead of a false play control; a real uploaded audio file enables playback. The publication workspace holds a single-beat selector with Telegram and YouTube editors and video export, plus a Telegram-only batch mode. Beat detail holds data, a read-only description view, and an honest statistics state with publication links. The upload action opens the working new-bit form. Recent demo projects use small waveform thumbnails; uploaded beats retain their real cover.
+The featured project shows a cover, a decorative demo waveform, an audio availability state and an action to open the beat. Demo projects offer a publication shortcut instead of a false play control; a real uploaded audio file enables playback. The publication workspace holds a single-beat selector with Telegram and YouTube editors and video export, plus a Telegram-only batch mode that selects saved beats first and accepts device files as an option. Beat detail holds data and an honest statistics state with publication links. The upload action opens the working new-bit form. Recent demo projects use small waveform thumbnails; uploaded beats retain their real cover.
 
 ## Do's and Don'ts
 
