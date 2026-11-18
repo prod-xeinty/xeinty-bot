@@ -7,7 +7,20 @@
     <title>XEINTY</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><div id="startup-status" style="min-height:100dvh;display:grid;place-items:center;background:#0d0d0e;color:#f4f4f2;font:16px sans-serif">Загружаем XEINTY…</div></div>
+    <script>
+      window.setTimeout(() => {
+        const status = document.getElementById('startup-status')
+        if (!status) return
+        const retry = document.createElement('button')
+        retry.textContent = 'Повторить'
+        retry.style.cssText = 'margin-top:16px;padding:12px 20px;border:1px solid #777;border-radius:10px;background:#303032;color:#fff;font:inherit'
+        retry.onclick = () => { const url = new URL(location.href); url.searchParams.set('reload', String(Date.now())); location.assign(url.toString()) }
+        status.textContent = 'Не удалось загрузить XEINTY'
+        status.style.cssText += ';align-content:center;justify-items:center'
+        status.append(retry)
+      }, 8000)
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
