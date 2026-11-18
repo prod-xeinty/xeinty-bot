@@ -195,6 +195,13 @@ input, textarea { caret-color: #fff; }
 .field > span { color: #b0b0b0; font-size: 12px; }
 .field input { width: 100%; height: 44px; padding: 0 12px; border: 1px solid #ffffff30; border-radius: 9px; background: #111112; color: #f3f3f2; font-size: 13px; }
 .field input::placeholder { color: #858586; }
+.batch-panel { max-width: 650px; margin-top: 20px; }
+.batch-caption { width: 100%; min-height: 180px; padding: 12px; border: 1px solid #ffffff30; border-radius: 10px; background: #111112; color: #f3f3f2; font: inherit; resize: vertical; }
+.batch-file-list { margin: 0; padding-left: 24px; color: #d5d5d6; font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
+.batch-cover-toggle { display: flex; align-items: center; gap: 10px; color: #e8e8e8; font-size: 13px; cursor: pointer; }
+.batch-cover-toggle input { width: 18px; height: 18px; accent-color: #d6d6d6; }
+.batch-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.batch-actions button:disabled { opacity: .5; cursor: not-allowed; }
 .key-picker { position: relative; }
 .key-picker input { width: 100%; }
 .key-picker input:focus { border-color: #ffffff8a; box-shadow: 0 0 0 3px #ffffff12; }
