@@ -613,3 +613,8 @@ input, textarea { caret-color: #fff; }
 .choice-group { padding: 9px 10px 4px; color: #c0c0c0; font-size: 10px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
 .choice-empty { padding: 10px; color: #c7c7c7; font-size: 12px; }
 @keyframes choice-open { from { opacity: 0; transform: translateY(var(--choice-slide)) scale(.98); } to { opacity: 1; transform: none; } }
+
+.youtube-upload h3 { margin: 0 0 10px; font-size: 14px; }
+.youtube-upload .video-download { margin-top: 10px; }
+.youtube-upload-progress { display: flex; align-items: center; gap: 10px; margin-top: 12px; color: #ddd; font-size: 12px; }
+.youtube-upload-progress progress { flex: 1; min-width: 0; height: 7px; accent-color: #ddd; }

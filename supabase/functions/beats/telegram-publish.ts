@@ -100,7 +100,7 @@ export function readCover(value: unknown): File | undefined {
   if (typeof value !== 'string' || value.length > 2_800_000) throw new TelegramPublishError('Обложка должна быть до 2 МБ.')
   const match = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/]+=*)$/.exec(value)
   if (!match) throw new TelegramPublishError('Нужна обложка JPG, PNG или WEBP.')
-  let bytes: Uint8Array
+  let bytes: Uint8Array<ArrayBuffer>
   try { bytes = Uint8Array.from(atob(match[2]), (char) => char.charCodeAt(0)) }
   catch { throw new TelegramPublishError('Не удалось прочитать обложку.') }
   if (bytes.length > 2 * 1024 * 1024) throw new TelegramPublishError('Обложка должна быть до 2 МБ.')

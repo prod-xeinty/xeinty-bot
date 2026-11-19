@@ -58,8 +58,7 @@ export function readPublicationCover(file: File): Promise<string> {
   })
 }
 
-export function OwnYoutubeVideo() {
-  const [file, setFile] = useState<File>()
+export function OwnYoutubeVideo({ file, onChange }: { file?: File; onChange: (file?: File) => void }) {
   const [url, setUrl] = useState('')
   useEffect(() => {
     if (!file) { setUrl(''); return }
@@ -70,7 +69,7 @@ export function OwnYoutubeVideo() {
 
   return <div className="video-result">
     <label className="upload-zone">
-      <input type="file" accept="video/*,.mp4,.mov,.webm,.mkv" onChange={(event) => setFile(event.target.files?.[0])} />
+      <input type="file" accept="video/*,.mp4,.mov,.webm,.mkv" onChange={(event) => onChange(event.target.files?.[0])} />
       <strong>{file?.name || 'Выбрать видео с устройства'}</strong>
     </label>
     {file && url && <>

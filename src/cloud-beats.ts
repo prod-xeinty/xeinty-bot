@@ -17,15 +17,16 @@ export function cloudConfigured(): boolean {
   return Boolean(projectUrl && publishableKey)
 }
 
-async function call<T>(initData: string, action: string, payload: Record<string, unknown> = {}): Promise<T> {
+async function call<T>(initData: string, action: string, payload: Record<string, unknown> = {}, signal?: AbortSignal): Promise<T> {
   if (!projectUrl || !publishableKey) throw new Error('Облако ещё не подключено')
   const response = await fetch(`${projectUrl}/functions/v1/beats`, {
     method: 'POST',
+    signal,
     headers: { 'content-type': 'application/json', apikey: publishableKey },
     body: JSON.stringify({ initData, action, ...payload }),
   })
   const result = await response.json().catch(() => ({})) as { error?: string }
-  if (!response.ok) throw new Error(result.error || `Ошибка облака (${response.status})`)
+  if (!response.ok) throw Object.assign(new Error(result.error || `Ошибка облака (${response.status})`), { status: response.status })
   return result as T
 }
 
@@ -107,4 +108,33 @@ export async function connectTelegramChannel(initData: string, channel: string):
 
 export async function disconnectTelegramChannel(initData: string, channel: string): Promise<void> {
   await call(initData, 'disconnect-telegram-channel', { channel })
+}
+
+export type YoutubeConnection = { configured: boolean; connected: boolean }
+export type YoutubeUploadStep = { next: number } | { url: string; saved: boolean }
+
+export function youtubeConnection(initData: string) {
+  return call<YoutubeConnection>(initData, 'youtube-status')
+}
+
+export function createYoutubeConnection(initData: string) {
+  return call<{ url: string }>(initData, 'youtube-connect')
+}
+
+export function disconnectYoutube(initData: string) {
+  return call<{ connected: boolean }>(initData, 'youtube-disconnect')
+}
+
+export function startYoutubeUpload(initData: string, payload: {
+  uploadId: string; beatId: string; size: number; mimeType: string; madeForKids: boolean
+}) {
+  return call<{ ready: boolean }>(initData, 'youtube-start', payload)
+}
+
+export function resumeYoutubeUpload(initData: string, uploadId: string, signal: AbortSignal) {
+  return call<YoutubeUploadStep>(initData, 'youtube-resume', { uploadId }, signal)
+}
+
+export function sendYoutubeChunk(initData: string, uploadId: string, offset: number, chunk: string, signal: AbortSignal) {
+  return call<YoutubeUploadStep>(initData, 'youtube-chunk', { uploadId, offset, chunk }, signal)
 }
