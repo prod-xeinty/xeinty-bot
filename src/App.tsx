@@ -1,5 +1,5 @@
 import xeintyLogo from './assets/xeinty-logo.png'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { ArrowLeft, ArrowRight, AudioLines, Check, ChevronRight, CircleHelp, Clipboard, Disc3, Download, ExternalLink, FileAudio2, ImagePlus, Link2, ListMusic, Music2, Ellipsis, Pause, Play, Plus, Radio, Send, Trash2, UploadCloud } from 'lucide-react'
 import { getTelegramWebApp } from './telegram'
 import { makeStaticVideo, type VideoStage } from './video'
@@ -61,6 +61,10 @@ function KeyPicker({ value, onChange, onCommit, label = 'Тональность'
   </div>
 }
 
+function staggerStyle(index: number): CSSProperties {
+  return { '--stagger': index } as CSSProperties
+}
+
 function App() {
   const [webApp, setWebApp] = useState(getTelegramWebApp)
   const [screen, setScreen] = useState<Screen>('library')
@@ -90,6 +94,7 @@ function App() {
   const [deleting, setDeleting] = useState(false)
   const [savingBeat, setSavingBeat] = useState(false)
   const [videoResult, setVideoResult] = useState<{ beatId: string; url: string; blob: Blob; size: number; seconds: number } | null>(null)
+  const shellRef = useRef<HTMLDivElement>(null)
   const videoUrlRef = useRef<string | null>(null)
   const fileUrlsRef = useRef<string[]>([])
   const playerRef = useRef<HTMLAudioElement>(null)
@@ -116,6 +121,117 @@ function App() {
     try { localStorage.setItem('xeinty-telegram-caption-preferences', JSON.stringify(captionPreferences)) }
     catch { /* Storage can be unavailable inside some WebViews. */ }
   }, [captionPreferences])
+
+  useEffect(() => {
+    const shell = shellRef.current
+    if (!shell) return
+    let frame = 0
+    const syncGradient = () => {
+      frame = 0
+      const maxScroll = Math.max(document.documentElement.scrollHeight - window.innerHeight, 0)
+      const progress = maxScroll > 0 ? Math.min(Math.max(window.scrollY / maxScroll, 0), 1) : 0
+      shell.style.setProperty('--scroll-p', progress.toFixed(4))
+    }
+    const onScroll = () => {
+      if (!frame) frame = window.requestAnimationFrame(syncGradient)
+    }
+    syncGradient()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    window.addEventListener('resize', onScroll, { passive: true })
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame)
+      window.removeEventListener('scroll', onScroll)
+      window.removeEventListener('resize', onScroll)
+    }
+  }, [screen, publishMode, tab])
+
+  useEffect(() => {
+    const shell = shellRef.current
+    if (!shell) return
+    const rand = (min: number, max: number) => min + Math.random() * (max - min)
+    const sign = () => (Math.random() < 0.5 ? -1 : 1)
+    const shapes = [
+      '62% 38% 46% 54% / 58% 44% 56% 42%',
+      '48% 52% 64% 36% / 44% 62% 38% 56%',
+      '56% 44% 38% 62% / 60% 42% 58% 40%',
+      '42% 58% 54% 46% / 52% 38% 62% 48%',
+    ]
+    const tones = [
+      ['#727278', '#333337', '#5d5d64', '#2a2a2e'],
+      ['#6b6d75', '#2f3137', '#595b63', '#27292e'],
+      ['#706e6b', '#343230', '#5e5c59', '#2b2928'],
+    ]
+    const pick = <T,>(items: T[]) => items[Math.floor(Math.random() * items.length)]
+    const palette = pick(tones)
+    shell.style.setProperty('--f1-c1', palette[0])
+    shell.style.setProperty('--f1-c2', palette[1])
+    shell.style.setProperty('--f2-c1', palette[2])
+    shell.style.setProperty('--f2-c2', palette[3])
+
+    shell.style.setProperty('--f1-rad', pick(shapes))
+    shell.style.setProperty('--f2-rad', pick(shapes))
+
+    shell.style.setProperty('--f1-x0', `${rand(-8, 12).toFixed(1)}vw`)
+    shell.style.setProperty('--f1-y0', `${rand(-4, 6).toFixed(1)}vh`)
+    shell.style.setProperty('--f1-dx', `${(sign() * rand(18, 28)).toFixed(1)}vw`)
+    shell.style.setProperty('--f1-dy', `${rand(22, 34).toFixed(1)}vh`)
+    shell.style.setProperty('--f1-r0', `${rand(-16, 16).toFixed(1)}deg`)
+    shell.style.setProperty('--f1-dr', `${(sign() * rand(22, 38)).toFixed(1)}deg`)
+
+    shell.style.setProperty('--f2-x0', `${rand(-10, 10).toFixed(1)}vw`)
+    shell.style.setProperty('--f2-y0', `${rand(-6, 6).toFixed(1)}vh`)
+    shell.style.setProperty('--f2-dx', `${(sign() * rand(16, 26)).toFixed(1)}vw`)
+    shell.style.setProperty('--f2-dy', `${(-rand(20, 32)).toFixed(1)}vh`)
+    shell.style.setProperty('--f2-r0', `${rand(-18, 18).toFixed(1)}deg`)
+    shell.style.setProperty('--f2-dr', `${(sign() * rand(24, 42)).toFixed(1)}deg`)
+  }, [])
+
+  useEffect(() => {
+    const shell = shellRef.current
+    if (!shell || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const glassSelector = '.form-panel, .data-card, .publication-card, .links-panel, .tools-section, .list-section, .video-tool, .publish-empty, .overview-hero, .future-grid > div'
+    let activeCard: HTMLElement | null = null
+    let frame = 0
+    let pending: { card: HTMLElement | null; x: number; y: number } | null = null
+
+    const clearActive = () => {
+      if (!activeCard) return
+      activeCard.removeAttribute('data-glass')
+      activeCard = null
+    }
+
+    const flush = () => {
+      frame = 0
+      if (!pending) return
+      const { card, x, y } = pending
+      pending = null
+      if (activeCard && activeCard !== card) activeCard.removeAttribute('data-glass')
+      activeCard = card
+      if (!card) return
+      const rect = card.getBoundingClientRect()
+      card.style.setProperty('--mx', `${(x - rect.left).toFixed(1)}px`)
+      card.style.setProperty('--my', `${(y - rect.top).toFixed(1)}px`)
+      card.setAttribute('data-glass', 'on')
+    }
+
+    const onPointerMove = (event: PointerEvent) => {
+      if (event.pointerType === 'touch') return
+      const card = event.target instanceof Element ? event.target.closest<HTMLElement>(glassSelector) : null
+      pending = { card, x: event.clientX, y: event.clientY }
+      if (!frame) frame = window.requestAnimationFrame(flush)
+    }
+
+    shell.addEventListener('pointermove', onPointerMove, { passive: true })
+    shell.addEventListener('pointerleave', clearActive)
+    window.addEventListener('blur', clearActive)
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame)
+      clearActive()
+      shell.removeEventListener('pointermove', onPointerMove)
+      shell.removeEventListener('pointerleave', clearActive)
+      window.removeEventListener('blur', clearActive)
+    }
+  }, [])
 
   function rememberHashtags(...captions: string[]) {
     const tags = captions.join(' ').match(/#[\p{L}\p{N}_]+/gu) ?? []
@@ -431,11 +547,20 @@ function App() {
     { id: 'more' as Screen, label: 'Ещё', Icon: Ellipsis },
   ]
 
-  return <div className="app-shell">
+  const activeScreen = screen === 'detail' ? 'library' : screen === 'templates' ? 'more' : screen
+  const mobileNav = nav.filter(({ id }) => id !== 'overview')
+  const activeNavIndex = nav.findIndex(({ id }) => id === activeScreen)
+  const activeMobileIndex = mobileNav.findIndex(({ id }) => id === activeScreen)
+
+  return <div className="app-shell" ref={shellRef}>
+    <div className="ambient-stage" aria-hidden="true">
+      <div className="ambient-form ambient-form--a" />
+      <div className="ambient-form ambient-form--b" />
+    </div>
     <div className="app-frame">
       <header className="topbar"><button className="topbar-action topbar-create" onClick={() => navigate('create')} aria-label="Добавить новый бит"><Plus size={20} /></button><button className="wordmark" onClick={() => navigate('library')} aria-label="XEINTY — к библиотеке"><img src={xeintyLogo} alt="" width={48} height={48} /></button><span className="topbar-badge">Демо-версия</span><button className="topbar-action topbar-overview" onClick={() => navigate('overview')} aria-label="Открыть статистику"><AudioLines size={19} /></button></header>
       <div className="workspace">
-        <aside className="desktop-rail" aria-label="Навигация"><div className="rail-head"><strong>Рабочее пространство</strong><span>Биты и публикации</span></div><nav>{nav.map(({ id, label, Icon }) => <button key={id} className={screen === id || (screen === 'detail' && id === 'library' || screen === 'templates' && id === 'more') ? 'is-active' : ''} onClick={() => navigate(id)}><Icon size={19} />{label}<ChevronRight size={16} /></button>)}</nav><div className="rail-footer"><AudioLines size={18} /><span>Один бит — все материалы для его публикации.</span></div></aside>
+        <aside className="desktop-rail" aria-label="Навигация"><div className="rail-head"><strong>Рабочее пространство</strong><span>Биты и публикации</span></div><nav style={{ '--nav-i': activeNavIndex } as CSSProperties}>{nav.map(({ id, label, Icon }) => <button key={id} className={activeScreen === id ? 'is-active' : ''} onClick={() => navigate(id)}><Icon size={19} />{label}<ChevronRight size={16} /></button>)}</nav><div className="rail-footer"><AudioLines size={18} /><span>Один бит — все материалы для его публикации.</span></div></aside>
         <main className="main-content" key={screen}>
           {screen === 'library' && <>
             <div className="library-context"><span>Текущий проект</span><span>{projectCount(beats.length)}</span></div>
@@ -446,9 +571,9 @@ function App() {
                 {latest.audioUrl && <audio key={latest.id} ref={playerRef} src={latest.audioUrl} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} onEnded={() => setIsPlaying(false)} preload="metadata" />}
               </div>
             </section>
-            <section className="tools-section"><div className="section-heading"><h2>Рабочие шаги</h2></div><div className="tool-grid"><button onClick={() => openBeat(latest, 'data')}><ListMusic size={20} /><span>Параметры</span></button><button onClick={() => openPublish(latest)}><Clipboard size={20} /><span>Публикация</span></button><button onClick={() => openBeat(latest, 'stats')}><Link2 size={20} /><span>Статистика</span></button></div></section>
+            <section className="tools-section"><div className="section-heading"><h2>Рабочие шаги</h2></div><div className="tool-grid"><button style={staggerStyle(0)} onClick={() => openBeat(latest, 'data')}><ListMusic size={20} /><span>Параметры</span></button><button style={staggerStyle(1)} onClick={() => openPublish(latest)}><Clipboard size={20} /><span>Публикация</span></button><button style={staggerStyle(2)} onClick={() => openBeat(latest, 'stats')}><Link2 size={20} /><span>Статистика</span></button></div></section>
             <button className="upload-banner" onClick={() => navigate('create')}><span className="upload-banner-icon"><UploadCloud size={23} /></span><span><strong>Добавить свой бит</strong><small>Обложка, аудио, BPM и теги</small></span><span className="upload-banner-arrow"><ArrowRight size={18} /></span></button>
-            <section className="list-section"><div className="list-header"><div><h2>Недавние проекты</h2></div><span className="demo-pill">{beats.every((beat) => beat.isDemo) ? 'Демо' : 'Демо и черновики'}</span></div><div className="beat-list">{beats.map((beat) => <button className="beat-row" key={beat.id} onClick={() => openBeat(beat)}>{beat.isDemo ? <span className="row-wave"><Waveform compact /></span> : <Cover beat={beat} className="row-cover" />}<span className="row-main"><strong>{beat.title}</strong><small>{beat.bpm} BPM · {beat.key}</small></span><span className="row-meta">{beat.cloud ? 'Облако' : beat.isDemo ? beat.status : 'На устройстве'}</span><ArrowRight className="row-arrow" size={18} /></button>)}</div><p className="demo-note"><CircleHelp size={15} /> {cloudAvailable ? 'Облачные биты доступны в Telegram на других устройствах. Локальные записи можно перенести из карточки бита.' : 'Примеры показывают интерфейс. Пока свои биты хранятся только на этом устройстве.'}</p></section>
+            <section className="list-section"><div className="list-header"><div><h2>Недавние проекты</h2></div><span className="demo-pill">{beats.every((beat) => beat.isDemo) ? 'Демо' : 'Демо и черновики'}</span></div><div className="beat-list">{beats.map((beat, index) => <button className="beat-row" key={beat.id} style={staggerStyle(index)} onClick={() => openBeat(beat)}>{beat.isDemo ? <span className="row-wave"><Waveform compact /></span> : <Cover beat={beat} className="row-cover" />}<span className="row-main"><strong>{beat.title}</strong><small>{beat.bpm} BPM · {beat.key}</small></span><span className="row-meta">{beat.cloud ? 'Облако' : beat.isDemo ? beat.status : 'На устройстве'}</span><ArrowRight className="row-arrow" size={18} /></button>)}</div><p className="demo-note"><CircleHelp size={15} /> {cloudAvailable ? 'Облачные биты доступны в Telegram на других устройствах. Локальные записи можно перенести из карточки бита.' : 'Примеры показывают интерфейс. Пока свои биты хранятся только на этом устройстве.'}</p></section>
           </>}
           {screen === 'create' && <>
             <div className="page-heading"><div><h1>Новый бит</h1><p>Добавь параметры, обложку и аудио для предпросмотра.</p></div></div>
@@ -458,12 +583,12 @@ function App() {
           </>}
           {screen === 'publish' && <>
             <div className="page-heading"><div><h1>Публикация</h1><p>Выбери один бит или подготовь пачку для Telegram.</p></div></div>
-            <div className="publish-mode" role="tablist" aria-label="Тип публикации"><button role="tab" aria-selected={publishMode === 'single'} className={publishMode === 'single' ? 'is-active' : ''} onClick={() => setPublishMode('single')}>Один бит</button><button role="tab" aria-selected={publishMode === 'batch'} className={publishMode === 'batch' ? 'is-active' : ''} onClick={() => setPublishMode('batch')}>Пачка битов</button></div>
-            {publishMode === 'single' && <>
-              {beats.some((beat) => !beat.isDemo) ? <div className="publish-beats" role="group" aria-label="Выбрать бит">{beats.filter((beat) => !beat.isDemo).map((beat) => <button key={beat.id} className={selected.id === beat.id ? 'is-active' : ''} onClick={() => setSelectedId(beat.id)}><Cover beat={beat} className="publish-beat-cover" /><span><strong>{beat.title}</strong><small>{beat.bpm} BPM · {beat.key}</small></span><Check size={16} className="publish-beat-check" /></button>)}</div> : <div className="publish-empty"><FileAudio2 size={25} /><strong>Пока нет своих битов</strong><p>Сначала добавь аудиофайл — затем здесь появятся тексты и сборка видео.</p><button className="outline-button" onClick={() => navigate('create')}>Добавить бит <ArrowRight size={17} /></button></div>}
+            <div className="publish-mode" role="tablist" aria-label="Тип публикации" style={{ '--tab-i': publishMode === 'batch' ? 1 : 0 } as CSSProperties}><button role="tab" aria-selected={publishMode === 'single'} className={publishMode === 'single' ? 'is-active' : ''} onClick={() => setPublishMode('single')}>Один бит</button><button role="tab" aria-selected={publishMode === 'batch'} className={publishMode === 'batch' ? 'is-active' : ''} onClick={() => setPublishMode('batch')}>Пачка битов</button></div>
+            {publishMode === 'single' && <div className="publish-stage" key="single">
+              {beats.some((beat) => !beat.isDemo) ? <div className="publish-beats" role="group" aria-label="Выбрать бит">{beats.filter((beat) => !beat.isDemo).map((beat, index) => <button style={staggerStyle(index)} key={beat.id} className={selected.id === beat.id ? 'is-active' : ''} onClick={() => setSelectedId(beat.id)}><Cover beat={beat} className="publish-beat-cover" /><span><strong>{beat.title}</strong><small>{beat.bpm} BPM · {beat.key}</small></span><Check size={16} className="publish-beat-check" /></button>)}</div> : <div className="publish-empty"><FileAudio2 size={25} /><strong>Пока нет своих битов</strong><p>Сначала добавь аудиофайл — затем здесь появятся тексты и сборка видео.</p><button className="outline-button" onClick={() => navigate('create')}>Добавить бит <ArrowRight size={17} /></button></div>}
               {!selected.isDemo && <div className="detail-section">
               <div className="section-intro"><h2>Для площадок</h2><p>Подстрой тексты и подготовь видео для выбранного бита.</p></div>
-              <div className="platform-switch" role="tablist" aria-label="Площадка"><button role="tab" aria-selected={publicationPlatform === 'telegram'} className={publicationPlatform === 'telegram' ? 'is-active' : ''} onClick={() => setPublicationPlatform('telegram')}>Telegram</button><button role="tab" aria-selected={publicationPlatform === 'youtube'} className={publicationPlatform === 'youtube' ? 'is-active' : ''} onClick={() => setPublicationPlatform('youtube')}>YouTube</button></div>
+                <div className="platform-switch" role="tablist" aria-label="Площадка" style={{ '--tab-i': publicationPlatform === 'youtube' ? 1 : 0 } as CSSProperties}><button role="tab" aria-selected={publicationPlatform === 'telegram'} className={publicationPlatform === 'telegram' ? 'is-active' : ''} onClick={() => setPublicationPlatform('telegram')}>Telegram</button><button role="tab" aria-selected={publicationPlatform === 'youtube'} className={publicationPlatform === 'youtube' ? 'is-active' : ''} onClick={() => setPublicationPlatform('youtube')}>YouTube</button></div>
               <div className="publication-grid">
                 <div className={`publication-card ${publicationPlatform === 'telegram' ? 'is-current' : ''}`}><div className="publication-card-head"><div className="platform-icon telegram-icon"><Send size={20} /></div><div><span>TELEGRAM</span><h3>Подпись к посту</h3></div></div><textarea aria-label="Подпись для Telegram" placeholder="Добавить подпись (необязательно)" value={selected.telegramCaption} maxLength={1024} onBlur={(e) => rememberHashtags(e.currentTarget.value)} onChange={(e) => updateBeat({ telegramCaption: e.target.value })} />{captionTools(selected.telegramCaption, (telegramCaption) => updateBeat({ telegramCaption }))}<label className="batch-cover-toggle"><input type="checkbox" checked={includeTelegramCover} onChange={(event) => toggleTelegramCover(event.target.checked)} /><span>Прикладывать обложку к посту</span></label>{cloudAvailable && selected.cloud && <DirectTelegramPublication channels={channels} key={selected.id} publish={(channel) => publishTelegram(channel, [selected], selected.telegramCaption, undefined, includeTelegramCover)} />}
                 </div>
@@ -486,12 +611,12 @@ function App() {
               </div>
 
             </div>}
-            </>}
+            </div>}
             {publishMode === 'batch' && <>
               <div className="section-intro"><h2>Пачка битов</h2><p>Несколько аудиофайлов для одного альбома Telegram.</p></div>
             <div className="form-panel batch-panel">
               <div className="batch-library"><div className="batch-library-head"><strong>Выбрать из библиотеки</strong><span>{batchSelectedIds.length + batchFiles.length} / 10</span></div>
-                {savedAudioBeats.length ? <div className="batch-beat-list">{savedAudioBeats.map((beat) => <button type="button" key={beat.id} className={batchSelectedIds.includes(beat.id) ? 'is-active' : ''} aria-pressed={batchSelectedIds.includes(beat.id)} onClick={() => toggleBatchBeat(beat.id)}><Cover beat={beat} className="publish-beat-cover" /><span><strong>{beat.title}</strong><small>{beat.bpm} BPM · {beat.key}</small></span><Check size={17} /></button>)}</div> : <div className="batch-library-empty"><p>В библиотеке пока нет битов с аудиофайлом.</p><button type="button" onClick={() => navigate('create')}>Добавить бит <ArrowRight size={15} /></button></div>}
+                {savedAudioBeats.length ? <div className="batch-beat-list">{savedAudioBeats.map((beat, index) => <button style={staggerStyle(index)} type="button" key={beat.id} className={batchSelectedIds.includes(beat.id) ? 'is-active' : ''} aria-pressed={batchSelectedIds.includes(beat.id)} onClick={() => toggleBatchBeat(beat.id)}><Cover beat={beat} className="publish-beat-cover" /><span><strong>{beat.title}</strong><small>{beat.bpm} BPM · {beat.key}</small></span><Check size={17} /></button>)}</div> : <div className="batch-library-empty"><p>В библиотеке пока нет битов с аудиофайлом.</p><button type="button" onClick={() => navigate('create')}>Добавить бит <ArrowRight size={15} /></button></div>}
               </div>
               <div className="batch-import"><span>ИЛИ ДОБАВЬ С УСТРОЙСТВА</span><label className="upload-zone"><input type="file" multiple accept=".mp3,.wav,audio/mpeg,audio/wav" onChange={(event) => chooseBatch(Array.from(event.target.files ?? []))} /><FileAudio2 size={26} /><strong>{batchFiles.length ? `${batchFiles.length} аудиофайлов` : 'Выбрать аудиофайлы'}</strong><span>MP3 или WAV</span></label></div>
               {batchFiles.length > 0 && <ol className="batch-file-list">{batchFiles.map((file, index) => <li key={`${index}-${file.name}`}>{file.name}</li>)}</ol>}
@@ -531,12 +656,12 @@ function App() {
           {screen === 'detail' && selected && <>
             <button className="back-link" onClick={() => navigate('library')}><ArrowLeft size={17} /> Все биты</button><section className="detail-hero"><Cover beat={selected} className="detail-cover" /><div className="detail-identity"><div className="eyebrow">{selected.isDemo ? 'Демо-проект' : 'Черновик'}</div><h1>{selected.title}</h1><p>{selected.tags}</p><div className="meta-row"><span>{selected.bpm} BPM</span><i /><span>{selected.key}</span></div><div className="detail-audio">{selected.audioUrl ? <><FileAudio2 size={17} /><span>{selected.audioName}</span><audio src={selected.audioUrl} controls preload="metadata" /></> : <><Music2 size={18} /><span>{selected.isDemo ? 'Аудио для этого демо-бита не загружено' : 'Аудиофайл не добавлен'}</span></>}</div></div></section>
             <div className="detail-tabs" role="tablist" aria-label="Разделы бита">{([['data', 'Данные'], ['stats', 'Статистика']] as [DetailTab, string][]).map(([id, label]) => <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? 'is-active' : ''} onClick={() => setTab(id)}>{label}</button>)}</div>
-            {tab === 'data' && <div className="detail-section"><div className="section-intro"><h2>Данные бита</h2><p>Изменения сохраняются автоматически.</p></div><div className="data-card data-card--editable"><label className="field"><span>НАЗВАНИЕ</span><input aria-label="Название бита" maxLength={120} value={selected.title} onChange={(event) => updateBeat({ title: event.target.value })} /></label><label className="field"><span>ТЕМП (BPM)</span><input aria-label="Темп BPM" type="number" min="1" max="300" value={selected.bpm === '—' ? '' : selected.bpm} onChange={(event) => updateBeat({ bpm: event.target.value || '—' })} /></label><label className="field"><span>ТОНАЛЬНОСТЬ</span><KeyPicker value={selected.key} label="Тональность бита" onChange={(key) => updateBeat({ key })} onCommit={(value) => { const key = normalizeMusicKey(value); if (key !== null) updateBeat({ key: key || "—" }); else { updateBeat({ key: "—" }); notify("Не распознал тональность; выбери вариант из списка.") } }} /></label><label className="field"><span>ТЕГИ</span><input aria-label="Теги бита" value={selected.tags} onChange={(event) => updateBeat({ tags: event.target.value })} /></label></div>{!selected.isDemo && <label className="upload-zone cover-edit"><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void changeCover(event.target.files?.[0])} /><ImagePlus size={22} /><strong>Изменить обложку</strong><span>JPG, PNG или WEBP до 2 МБ</span></label>}<p className="detail-footnote">Подписи для площадок редактируются в разделе «Публикация». {selected.cloud ? 'MP3 и обложка хранятся в облаке.' : ''}</p>{!selected.isDemo && <div className="delete-beat">{cloudAvailable && !selected.cloud && <button onClick={migrateBeat} disabled={savingBeat}><UploadCloud size={16} /> {savingBeat ? 'Переносим…' : 'Перенести в облако'}</button>}{confirmDelete ? <><p>Удалить «{selected.title}» вместе с аудио и обложкой {selected.cloud ? 'из облака' : 'с этого устройства'}?</p><div><button onClick={() => setConfirmDelete(false)}>Отмена</button><button className="delete-beat-confirm" onClick={deleteBeat} disabled={deleting}>Подтвердить удаление</button></div></> : <button onClick={() => setConfirmDelete(true)}><Trash2 size={16} /> Удалить бит</button>}</div>}</div>}
-            {tab === 'stats' && <div className="detail-section"><div className="section-intro"><h2>Статистика</h2><p>Публикации этого бита и их показатели.</p></div><div className="links-panel"><div className="stats-notice"><Radio size={20} /><div><strong>{selected.telegramLink || selected.youtubeLink ? 'Публикации добавлены' : 'Публикаций пока нет'}</strong><p>{selected.telegramLink || selected.youtubeLink ? 'Ссылки сохранены. Подсчёт просмотров появится после подключения Telegram и YouTube.' : 'После публикации добавь ссылку на пост или видео. Просмотры пока не подключены.'}</p></div></div><label className="field"><span>ПОСТ В TELEGRAM</span><div className="link-input"><Link2 size={18} /><input type="url" placeholder="https://t.me/yourchannel/123" value={selected.telegramLink} onChange={(e) => updateBeat({ telegramLink: e.target.value })} />{selected.telegramLink && <a href={selected.telegramLink} target="_blank" rel="noreferrer" aria-label="Открыть Telegram"><ExternalLink size={17} /></a>}</div></label><label className="field"><span>ВИДЕО НА YOUTUBE</span><div className="link-input"><Link2 size={18} /><input type="url" placeholder="https://youtube.com/watch?v=..." value={selected.youtubeLink} onChange={(e) => updateBeat({ youtubeLink: e.target.value })} />{selected.youtubeLink && <a href={selected.youtubeLink} target="_blank" rel="noreferrer" aria-label="Открыть YouTube"><ExternalLink size={17} /></a>}</div></label><p className="form-hint">{selected.cloud ? 'Ссылки сохраняются в облаке.' : 'Ссылки сохраняются на этом устройстве.'}</p></div></div>}
+            {tab === 'data' && <div className="detail-section" key="data"><div className="section-intro"><h2>Данные бита</h2><p>Изменения сохраняются автоматически.</p></div><div className="data-card data-card--editable"><label className="field"><span>НАЗВАНИЕ</span><input aria-label="Название бита" maxLength={120} value={selected.title} onChange={(event) => updateBeat({ title: event.target.value })} /></label><label className="field"><span>ТЕМП (BPM)</span><input aria-label="Темп BPM" type="number" min="1" max="300" value={selected.bpm === '—' ? '' : selected.bpm} onChange={(event) => updateBeat({ bpm: event.target.value || '—' })} /></label><label className="field"><span>ТОНАЛЬНОСТЬ</span><KeyPicker value={selected.key} label="Тональность бита" onChange={(key) => updateBeat({ key })} onCommit={(value) => { const key = normalizeMusicKey(value); if (key !== null) updateBeat({ key: key || "—" }); else { updateBeat({ key: "—" }); notify("Не распознал тональность; выбери вариант из списка.") } }} /></label><label className="field"><span>ТЕГИ</span><input aria-label="Теги бита" value={selected.tags} onChange={(event) => updateBeat({ tags: event.target.value })} /></label></div>{!selected.isDemo && <label className="upload-zone cover-edit"><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void changeCover(event.target.files?.[0])} /><ImagePlus size={22} /><strong>Изменить обложку</strong><span>JPG, PNG или WEBP до 2 МБ</span></label>}<p className="detail-footnote">Подписи для площадок редактируются в разделе «Публикация». {selected.cloud ? 'MP3 и обложка хранятся в облаке.' : ''}</p>{!selected.isDemo && <div className="delete-beat">{cloudAvailable && !selected.cloud && <button onClick={migrateBeat} disabled={savingBeat}><UploadCloud size={16} /> {savingBeat ? 'Переносим…' : 'Перенести в облако'}</button>}{confirmDelete ? <><p>Удалить «{selected.title}» вместе с аудио и обложкой {selected.cloud ? 'из облака' : 'с этого устройства'}?</p><div><button onClick={() => setConfirmDelete(false)}>Отмена</button><button className="delete-beat-confirm" onClick={deleteBeat} disabled={deleting}>Подтвердить удаление</button></div></> : <button onClick={() => setConfirmDelete(true)}><Trash2 size={16} /> Удалить бит</button>}</div>}</div>}
+            {tab === 'stats' && <div className="detail-section" key="stats"><div className="section-intro"><h2>Статистика</h2><p>Публикации этого бита и их показатели.</p></div><div className="links-panel"><div className="stats-notice"><Radio size={20} /><div><strong>{selected.telegramLink || selected.youtubeLink ? 'Публикации добавлены' : 'Публикаций пока нет'}</strong><p>{selected.telegramLink || selected.youtubeLink ? 'Ссылки сохранены. Подсчёт просмотров появится после подключения Telegram и YouTube.' : 'После публикации добавь ссылку на пост или видео. Просмотры пока не подключены.'}</p></div></div><label className="field"><span>ПОСТ В TELEGRAM</span><div className="link-input"><Link2 size={18} /><input type="url" placeholder="https://t.me/yourchannel/123" value={selected.telegramLink} onChange={(e) => updateBeat({ telegramLink: e.target.value })} />{selected.telegramLink && <a href={selected.telegramLink} target="_blank" rel="noreferrer" aria-label="Открыть Telegram"><ExternalLink size={17} /></a>}</div></label><label className="field"><span>ВИДЕО НА YOUTUBE</span><div className="link-input"><Link2 size={18} /><input type="url" placeholder="https://youtube.com/watch?v=..." value={selected.youtubeLink} onChange={(e) => updateBeat({ youtubeLink: e.target.value })} />{selected.youtubeLink && <a href={selected.youtubeLink} target="_blank" rel="noreferrer" aria-label="Открыть YouTube"><ExternalLink size={17} /></a>}</div></label><p className="form-hint">{selected.cloud ? 'Ссылки сохраняются в облаке.' : 'Ссылки сохраняются на этом устройстве.'}</p></div></div>}
           </>}
         </main>
       </div>
-      <nav className="bottom-nav" aria-label="Главная навигация">{nav.filter(({ id }) => id !== 'overview').map(({ id, label, Icon }) => <button key={id} className={screen === id || (screen === 'detail' && id === 'library' || screen === 'templates' && id === 'more') ? 'is-active' : ''} onClick={() => navigate(id)}><Icon size={21} /><span>{label}</span></button>)}</nav>
+      <nav className="bottom-nav" aria-label="Главная навигация" data-has-active={activeMobileIndex >= 0} style={{ '--nav-i': Math.max(0, activeMobileIndex), '--nav-count': mobileNav.length } as CSSProperties}>{mobileNav.map(({ id, label, Icon }) => <button key={id} className={activeScreen === id ? 'is-active' : ''} onClick={() => navigate(id)}><Icon size={21} /><span>{label}</span></button>)}</nav>
       {toast && <div className="toast" role="status"><Check size={17} />{toast}</div>}
     </div>
   </div>
