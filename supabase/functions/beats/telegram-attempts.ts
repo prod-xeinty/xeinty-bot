@@ -1,11 +1,13 @@
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2'
 import { channelForPublisher, postAudio, postCover, readCover, TelegramPublishError } from './telegram-publish.ts'
 
+import { joinTrackCaption, telegramCaptionLimit } from './telegram-caption.ts'
+
 const table = 'telegram_publication_attempts'
 const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
 const retryDelay = 90_000
 type Stage = 'cover_ready' | 'cover_sending' | 'audio_ready' | 'audio_sending' | 'audio_sent' | 'done'
-type Payload = { caption: string; coverCaption: string; cover?: string | null; useSavedCover: boolean; republish: boolean }
+type Payload = { caption: string; trackCredits?: string[]; coverCaption: string; cover?: string | null; useSavedCover: boolean; republish: boolean }
 type Attempt = { id: string; channel: string; beat_ids: string[]; payload: Payload; stage: Stage;
   url: string | null; cover_sent: boolean; warnings: string[]; updated_at: string }
 type Result = { data: object; status?: number }
@@ -23,7 +25,7 @@ export async function telegramPublication(db: SupabaseClient, userId: number, bo
   if (action === 'telegram-publication-active') {
     const { data, error } = await owned().neq('stage', 'done').maybeSingle()
     if (error) throw error
-    return { data: { attempt: data ? summary(data as Attempt) : null } }
+    return { data: { attempt: data ? summary(data as Attempt) : null, trackCreditsSupported: true } }
   }
 
   const attemptId = body.attemptId ?? (action === 'publish-telegram' ? crypto.randomUUID() : undefined)
@@ -62,9 +64,15 @@ export async function telegramPublication(db: SupabaseClient, userId: number, bo
     const { beatIds, caption, channel } = body
     const coverCaption = body.coverCaption ?? ''
     if (!Array.isArray(beatIds) || beatIds.length < 1 || beatIds.length > 10 || new Set(beatIds).size !== beatIds.length ||
-        !beatIds.every((id) => typeof id === 'string' && uuid.test(id)) || typeof caption !== 'string' || caption.length > 1024 ||
-        typeof coverCaption !== 'string' || coverCaption.length > 1024 || typeof channel !== 'string' || !/^-100[0-9]{5,16}$/.test(channel)) {
+        !beatIds.every((id) => typeof id === 'string' && uuid.test(id)) || typeof caption !== 'string' || caption.length > telegramCaptionLimit ||
+        typeof coverCaption !== 'string' || coverCaption.length > telegramCaptionLimit || typeof channel !== 'string' || !/^-100[0-9]{5,16}$/.test(channel)) {
       return failure('Выбери канал и до 10 битов. Каждая подпись должна быть до 1024 символов.')
+    }
+    const trackCredits = body.trackCredits
+    if (trackCredits !== undefined && (!Array.isArray(trackCredits) || trackCredits.length !== beatIds.length ||
+        trackCredits.some((credit) => typeof credit !== 'string' || credit.length > telegramCaptionLimit) ||
+        joinTrackCaption(trackCredits[beatIds.length - 1], caption).length > telegramCaptionLimit)) {
+      return failure('Проверь подписи к трекам. Общая подпись и кредиты последнего трека вместе должны занимать до 1024 символов.')
     }
     const connected = await db.from('telegram_channels').select('chat_id').eq('telegram_user_id', userId).eq('chat_id', channel).maybeSingle()
     if (connected.error) throw connected.error
@@ -73,7 +81,7 @@ export async function telegramPublication(db: SupabaseClient, userId: number, bo
     if (beats.some((beat) => !beat?.audio_path)) return failure('Для публикации нужны твои биты с MP3 в облаке.', 404)
     if (body.republish !== true && beats.some((beat) => beat?.telegram_link?.trim())) return failure('Подтверди «Опубликовать заново».', 409)
     const cover = readCover(body.cover)
-    const payload = { caption, coverCaption, cover: cover ? body.cover : null, useSavedCover: body.useSavedCover === true, republish: body.republish === true }
+    const payload = { caption, trackCredits, coverCaption, cover: cover ? body.cover : null, useSavedCover: body.useSavedCover === true, republish: body.republish === true }
     const inserted = await db.from(table).insert({ id: attemptId, telegram_user_id: userId, channel, beat_ids: beatIds,
       stage: cover ? 'cover_ready' : 'audio_ready', payload }).select('*').single()
     if (inserted.error?.code === '23505') {
@@ -127,7 +135,7 @@ export async function telegramPublication(db: SupabaseClient, userId: number, bo
 
     if (!await advance('audio_ready', 'audio_sending')) return failure('Отправка уже идёт. Обнови статус.', 409)
     let url: string
-    try { url = await postAudio(chat, tracks, attempt.payload.caption) }
+    try { url = await postAudio(chat, tracks, attempt.payload.caption, attempt.payload.trackCredits) }
     catch (error) {
       if (error instanceof TelegramPublishError && !error.deliveryUnknown) await advance('audio_sending', 'audio_ready')
       return failure((attempt.cover_sent ? 'Обложка отправлена. ' : '') + 'Telegram не подтвердил аудио. Проверь статус отправки.', 502)

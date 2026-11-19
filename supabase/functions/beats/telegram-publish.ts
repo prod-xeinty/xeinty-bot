@@ -1,3 +1,5 @@
+import { joinTrackCaption, linkTrackCredits } from './telegram-caption.ts'
+
 type Chat = { id: number; type: string; title?: string; username?: string }
 type Member = { status: string; can_post_messages?: boolean }
 type Message = { message_id: number }
@@ -69,13 +71,14 @@ function captionWithLinks(source: string) {
   return { caption, caption_entities: caption_entities.length ? caption_entities : undefined }
 }
 
-export async function postAudio(chat: Chat, tracks: { audio: string }[], caption: string): Promise<string> {
+export async function postAudio(chat: Chat, tracks: { audio: string }[], caption: string, credits?: string[]): Promise<string> {
+  const trackCaption = (index: number) => captionWithLinks(joinTrackCaption(linkTrackCredits(credits?.[index] ?? ''), index === tracks.length - 1 ? caption : ''))
   let first: Message
   if (tracks.length === 1) {
-    first = await api<Message>('sendAudio', { chat_id: chat.id, ...tracks[0], ...captionWithLinks(caption) })
+    first = await api<Message>('sendAudio', { chat_id: chat.id, ...tracks[0], ...trackCaption(0) })
   } else {
     const media = tracks.map(({ audio }, index) => ({
-      type: 'audio', media: audio, ...(index === tracks.length - 1 ? captionWithLinks(caption) : {}),
+      type: 'audio', media: audio, ...trackCaption(index),
     }))
     const messages = await api<Message[]>('sendMediaGroup', { chat_id: chat.id, media })
     first = messages[0]

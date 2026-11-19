@@ -6,6 +6,9 @@ import xeintyLogo from './assets/xeinty-logo.png'
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { ArrowLeft, ArrowRight, AudioLines, Check, ChevronDown, ChevronRight, ChevronUp, CircleHelp, Clipboard, Download, ExternalLink, FileAudio2, ImagePlus, Link2, ListMusic, Music2, Ellipsis, Plus, Radio, Send, Trash2, UploadCloud, X } from 'lucide-react'
 import { AudioDock, PlayPauseIcon, useAudioPlayer } from './audio-player'
+import { joinTrackCaption, telegramCaptionLimit } from '../supabase/functions/beats/telegram-caption'
+import { BatchTrackCredits } from './batch-credits'
+import { emptyBatchDraft, useBatchDraft } from './batch-draft'
 import { BeatSearch, defaultLibraryFilters, LibraryControls, matchBeats, refineLibrary } from './beat-library'
 import { getTelegramWebApp } from './telegram'
 import { makeStaticVideo, videoProfileLabel, type VideoStage } from './video'
@@ -80,15 +83,16 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
   const [libraryFilters, setLibraryFilters] = useState(defaultLibraryFilters)
   const [publishQuery, setPublishQuery] = useState('')
   const [batchQuery, setBatchQuery] = useState('')
-  const [batchSelectedIds, setBatchSelectedIds] = useState<string[]>([])
-  const [batchFiles, setBatchFiles] = useState<File[]>([])
-  const [batchCaption, setBatchCaption] = useState('')
-  const [batchCoverCaption, setBatchCoverCaption] = useState('')
+  const telegramUserId = webApp?.initDataUnsafe.user?.id
+  const draftScope = telegramChecked ? telegramUserId ? 'telegram:' + telegramUserId : 'browser' : undefined
+  const batchDraft = useBatchDraft(draftScope)
+  const { selectedIds: batchSelectedIds, files: batchFiles, caption: batchCaption, coverCaption: batchCoverCaption, cover: batchCoverFile, credits: batchCredits } = batchDraft.draft
+  const [confirmBatchReset, setConfirmBatchReset] = useState(false)
   const [channels, setChannels] = useState<TelegramChannel[]>([])
   const [channelLoadError, setChannelLoadError] = useState('')
   const [captionPreferences, setCaptionPreferences] = useState(readCaptionPreferences)
-  const [batchCoverFile, setBatchCoverFile] = useState<File | null>(null)
   const [includeTelegramCover, setIncludeTelegramCover] = useState(() => localStorage.getItem('xeinty-telegram-cover') !== 'false')
+  const batchIncludeCover = batchDraft.draft.includeCover ?? includeTelegramCover
   const [coverFile, setCoverFile] = useState<File | null>(null)
   const [publicationPlatform, setPublicationPlatform] = useState<'telegram' | 'youtube'>('telegram')
   const [videoSource, setVideoSource] = useState<'generated' | 'own'>('generated')
@@ -127,6 +131,10 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
   }
   const savedAudioBeats = beats.filter((beat) => !beat.isDemo && (beat.audioFile || beat.audioUrl))
   const batchBeats = batchSelectedIds.flatMap((id) => savedAudioBeats.filter((beat) => beat.id === id))
+  const unavailableBatchBeats = batchSelectedIds.length - batchBeats.length
+  const trackCredits = batchBeats.map((beat) => batchCredits[beat.id] ?? '')
+  const hasTrackCredits = trackCredits.some((credit) => Boolean(credit.trim()))
+  const lastCaptionTooLong = joinTrackCaption(trackCredits.at(-1) ?? '', batchCaption).length > telegramCaptionLimit
   const libraryBeats = screen === 'library' ? refineLibrary(beats, libraryFilters) : []
   const publicationBeats = beats.filter((beat) => !beat.isDemo)
   const matchingPublicationBeats = matchBeats(publicationBeats, publishQuery)
@@ -319,24 +327,25 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
   function toggleBatchBeat(id: string) {
     const next = batchSelectedIds.includes(id) ? batchSelectedIds.filter((item) => item !== id) : [...batchSelectedIds, id]
     if (next.length + batchFiles.length > 10) { notify('В одну пачку можно добавить не больше 10 аудиофайлов'); return }
-    setBatchSelectedIds(next)
+    batchDraft.update((draft) => ({ ...draft, selectedIds: next }))
   }
 
   function moveBatchBeat(id: string, offset: number) {
-    setBatchSelectedIds((items) => {
+    batchDraft.update((draft) => {
+      const items = draft.selectedIds
       const index = items.indexOf(id)
       const destination = index + offset
-      if (index < 0 || destination < 0 || destination >= items.length) return items
+      if (index < 0 || destination < 0 || destination >= items.length) return draft
       const next = [...items]
       next.splice(index, 1)
       next.splice(destination, 0, id)
-      return next
+      return { ...draft, selectedIds: next }
     })
   }
 
   function chooseBatch(files: File[]) {
     if (batchSelectedIds.length + files.length > 10) { notify('В одну пачку можно добавить не больше 10 аудиофайлов'); return }
-    setBatchFiles(files)
+    batchDraft.update((draft) => ({ ...draft, files }))
   }
 
   useEffect(() => {
@@ -419,6 +428,7 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
       const firstOwnBeat = beats.find((beat) => !beat.isDemo)
       if (firstOwnBeat) setSelectedId(firstOwnBeat.id)
     }
+    setConfirmBatchReset(false)
     setScreen(next)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
@@ -443,9 +453,10 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
     }
   }
 
-  async function publishTelegram(attemptId: string, channel: string, targets: Beat[], caption: string, cover?: File, useSavedCover = false, coverCaption = '', republish = false) {
+  async function publishTelegram(attemptId: string, channel: string, targets: Beat[], caption: string, options: { cover?: File; useSavedCover?: boolean; coverCaption?: string; republish?: boolean; trackCredits?: string[] }) {
+    const { cover, useSavedCover, coverCaption = '', republish, trackCredits } = options
     if (!webApp?.initData) throw new Error('Открой XEINTY через Telegram.')
-    if (caption.length > 1024) throw new Error('Сократи подпись до 1024 символов.')
+    if (joinTrackCaption(trackCredits?.at(-1) ?? '', caption).length > telegramCaptionLimit) throw new Error('Сократи подпись до 1024 символов.')
     const beatIds = targets.map((beat) => beat.id)
     for (const beat of targets) {
       const timer = cloudSaveTimersRef.current.get(beat.id)
@@ -458,7 +469,7 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
       }
     }
     const result = await publishCloudTelegram(webApp.initData, {
-      attemptId, channel, beatIds, caption, useSavedCover, coverCaption, republish, cover: cover ? await readPublicationCover(cover) : undefined,
+      attemptId, channel, beatIds, caption, trackCredits, useSavedCover, coverCaption, republish, cover: cover ? await readPublicationCover(cover) : undefined,
     })
     rememberHashtags(caption, coverCaption)
     applyTelegramResult(result, beatIds)
@@ -743,7 +754,7 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
               <div className="section-intro"><h2>Для площадок</h2><p>Выбран бит · {selected.title}</p></div>
                 <div className="platform-switch" role="tablist" aria-label="Площадка" style={{ '--tab-i': publicationPlatform === 'youtube' ? 1 : 0 } as CSSProperties}><button role="tab" aria-selected={publicationPlatform === 'telegram'} className={publicationPlatform === 'telegram' ? 'is-active' : ''} onClick={() => setPublicationPlatform('telegram')}>Telegram</button><button role="tab" aria-selected={publicationPlatform === 'youtube'} className={publicationPlatform === 'youtube' ? 'is-active' : ''} onClick={() => setPublicationPlatform('youtube')}>YouTube</button></div>
               <div className="publication-grid">
-                <div className={`publication-card ${publicationPlatform === 'telegram' ? 'is-current' : ''}`}><div className="publication-card-head"><div className="platform-icon telegram-icon"><Send size={20} /></div><div><span>TELEGRAM</span><h3>Подпись к посту</h3></div></div><textarea aria-label="Подпись для Telegram" placeholder="Добавить подпись (необязательно)" value={selected.telegramCaption} maxLength={1024} onBlur={(e) => rememberHashtags(e.currentTarget.value)} onChange={(e) => updateBeat({ telegramCaption: e.target.value })} />{captionTools(selected.telegramCaption, (telegramCaption) => updateBeat({ telegramCaption }))}<label className="batch-cover-toggle"><input type="checkbox" checked={includeTelegramCover} onChange={(event) => toggleTelegramCover(event.target.checked)} /><span>Прикладывать обложку к посту</span></label>{cloudAvailable && selected.cloud && <DirectTelegramPublication channels={channels} initData={webApp?.initData ?? ''} onRecovered={applyTelegramResult} key={selected.id} publishedCount={selected.telegramLink.trim() ? 1 : 0} publish={(attemptId, channel, republish) => publishTelegram(attemptId, channel, [selected], selected.telegramCaption, undefined, includeTelegramCover, '', republish)} />}
+                <div className={`publication-card ${publicationPlatform === 'telegram' ? 'is-current' : ''}`}><div className="publication-card-head"><div className="platform-icon telegram-icon"><Send size={20} /></div><div><span>TELEGRAM</span><h3>Подпись к посту</h3></div></div><textarea aria-label="Подпись для Telegram" placeholder="Добавить подпись (необязательно)" value={selected.telegramCaption} maxLength={1024} onBlur={(e) => rememberHashtags(e.currentTarget.value)} onChange={(e) => updateBeat({ telegramCaption: e.target.value })} />{captionTools(selected.telegramCaption, (telegramCaption) => updateBeat({ telegramCaption }))}<label className="batch-cover-toggle"><input type="checkbox" checked={includeTelegramCover} onChange={(event) => toggleTelegramCover(event.target.checked)} /><span>Прикладывать обложку к посту</span></label>{cloudAvailable && selected.cloud && <DirectTelegramPublication channels={channels} initData={webApp?.initData ?? ''} onRecovered={applyTelegramResult} key={selected.id} publishedCount={selected.telegramLink.trim() ? 1 : 0} publish={(attemptId, channel, republish) => publishTelegram(attemptId, channel, [selected], selected.telegramCaption, { useSavedCover: includeTelegramCover, republish })} />}
                 </div>
                 <div className={`publication-card ${publicationPlatform === 'youtube' ? 'is-current' : ''}`}><div className="publication-card-head"><div className="platform-icon youtube-icon">▶</div><div><span>YOUTUBE</span><h3>Описание видео</h3></div></div><textarea aria-label="Описание для YouTube" placeholder="Описание (необязательно)" maxLength={5000} value={selected.youtubeDescription} onChange={(e) => updateBeat({ youtubeDescription: e.target.value })} />{captionTools(selected.youtubeDescription, (youtubeDescription) => updateBeat({ youtubeDescription }), 'youtube')}<label className="keywords-field"><span>КЛЮЧЕВЫЕ СЛОВА</span><input aria-label="Ключевые слова YouTube" value={selected.youtubeKeywords} onChange={(e) => updateBeat({ youtubeKeywords: e.target.value })} /></label>
 
@@ -780,7 +791,22 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
             </div>}
             {publishMode === 'batch' && <>
               <div className="section-intro"><h2>Пачка битов</h2><p>Несколько аудиофайлов для одного альбома Telegram.</p></div>
-            <div className="form-panel batch-panel">
+                        {batchDraft.status === "loading" ? <p className="form-hint" role="status">Открываем черновик…</p> : <div className="form-panel batch-panel">
+              {(batchDraft.hasContent || batchDraft.status === "error") && <div className="batch-draft-bar">
+                {batchDraft.status === "error" ? <>
+                  <p className="video-error" role="alert">Не удалось сохранить или открыть черновик на этом устройстве.</p>
+                  {batchDraft.canRetry && <button type="button" className="outline-button" onClick={() => batchDraft.update((draft) => draft)}>Сохранить снова</button>}
+                </> : <p className="form-hint" role="status">{batchDraft.status === "saving" ? "Сохраняем черновик…" : "Черновик сохранён на этом устройстве"}</p>}
+                {batchDraft.hasContent && (confirmBatchReset ? <>
+                  <p className="form-hint">Очистить состав, подписи и файлы этой пачки?</p>
+                  <button type="button" className="outline-button" onClick={() => { batchDraft.update(() => emptyBatchDraft); setConfirmBatchReset(false) }}>Подтвердить очистку</button>
+                  <button type="button" className="outline-button" onClick={() => setConfirmBatchReset(false)}>Отмена</button>
+                </> : <button type="button" className="outline-button" onClick={() => setConfirmBatchReset(true)}>Очистить черновик</button>)}
+              </div>}
+              {unavailableBatchBeats > 0 && <div className="batch-draft-bar">
+                <p className="form-hint" role="status">Недоступных битов в черновике: {unavailableBatchBeats}. Проверь библиотеку перед отправкой.</p>
+                <button type="button" className="outline-button" onClick={() => batchDraft.update((draft) => ({ ...draft, selectedIds: batchBeats.map((beat) => beat.id) }))}>Убрать недоступные биты</button>
+              </div>}
               <div className="batch-library"><div className="batch-library-head"><strong>Выбрать из библиотеки</strong><span>{batchSelectedIds.length + batchFiles.length} / 10</span></div>
                 {savedAudioBeats.length ? <>
                   <BeatSearch label="Поиск бита для пачки" value={batchQuery} onChange={setBatchQuery} />
@@ -789,34 +815,60 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
                     <strong>Порядок отправки</strong>
                     <ol className="batch-selection-list" aria-label="Порядок битов в пачке">
                       {batchBeats.map((beat, index) => <li key={beat.id}>
-                        <span>{beat.title}</span>
-                        <div className="batch-selection-actions">
-                          <button type="button" aria-label={"Поднять " + beat.title} disabled={index === 0} onClick={() => moveBatchBeat(beat.id, -1)}><ChevronUp size={16} /></button>
-                          <button type="button" aria-label={"Опустить " + beat.title} disabled={index === batchBeats.length - 1} onClick={() => moveBatchBeat(beat.id, 1)}><ChevronDown size={16} /></button>
-                          <button type="button" aria-label={"Убрать " + beat.title} onClick={() => toggleBatchBeat(beat.id)}><X size={16} /></button>
+                        <div className="batch-selection-row">
+                          <span>{beat.title}</span>
+                          <div className="batch-selection-actions">
+                            <button type="button" aria-label={"Поднять " + beat.title} disabled={index === 0} onClick={() => moveBatchBeat(beat.id, -1)}><ChevronUp size={16} /></button>
+                            <button type="button" aria-label={"Опустить " + beat.title} disabled={index === batchBeats.length - 1} onClick={() => moveBatchBeat(beat.id, 1)}><ChevronDown size={16} /></button>
+                            <button type="button" aria-label={"Убрать " + beat.title} onClick={() => toggleBatchBeat(beat.id)}><X size={16} /></button>
+                          </div>
                         </div>
+                        <BatchTrackCredits title={beat.title} value={batchCredits[beat.id] ?? ""}
+                          onChange={(text) => batchDraft.update((draft) => ({ ...draft, credits: { ...draft.credits, [beat.id]: text } }))} />
                       </li>)}
                     </ol>
                   </div>}
                 </> : <div className="batch-library-empty"><p>В библиотеке пока нет битов с аудиофайлом.</p><button type="button" onClick={() => navigate('create')}>Добавить бит <ArrowRight size={15} /></button></div>}
               </div>
-              <div className="batch-import"><span>ИЛИ ДОБАВЬ С УСТРОЙСТВА</span><label className="upload-zone"><input type="file" multiple accept=".mp3,.wav,audio/mpeg,audio/wav" onChange={(event) => chooseBatch(Array.from(event.target.files ?? []))} /><FileAudio2 size={26} /><strong>{batchFiles.length ? `${batchFiles.length} аудиофайлов` : 'Выбрать аудиофайлы'}</strong><span>MP3 или WAV</span></label></div>
-              {batchFiles.length > 0 && <ol className="batch-file-list">{batchFiles.map((file, index) => <li key={`${index}-${file.name}`}>{file.name}</li>)}</ol>}
-              <label className="batch-cover-toggle"><input type="checkbox" checked={includeTelegramCover} onChange={(event) => toggleTelegramCover(event.target.checked)} /><span>Прикладывать обложку к посту</span></label>
-              {includeTelegramCover && <label className="upload-zone"><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setBatchCoverFile(event.target.files?.[0] ?? null)} /><ImagePlus size={24} /><strong>{batchCoverFile?.name ?? 'Общая обложка'}</strong><span>Необязательно · JPG, PNG или WEBP</span></label>}
-              {includeTelegramCover && batchCoverFile && <>
-                <label className="field"><span>Подпись к обложке</span><textarea className="batch-caption" maxLength={1024} value={batchCoverCaption} onBlur={(event) => rememberHashtags(event.currentTarget.value)} onChange={(event) => setBatchCoverCaption(event.target.value)} placeholder="Необязательно" /></label>
-                {captionTools(batchCoverCaption, setBatchCoverCaption, 'batch')}
+              <div className="batch-import"><span>ИЛИ ДОБАВЬ С УСТРОЙСТВА</span><label className="upload-zone"><input type="file" multiple accept=".mp3,.wav,audio/mpeg,audio/wav" onChange={(event) => { chooseBatch(Array.from(event.currentTarget.files ?? [])); event.currentTarget.value = '' }} /><FileAudio2 size={26} /><strong>{batchFiles.length ? `${batchFiles.length} аудиофайлов` : 'Выбрать аудиофайлы'}</strong><span>MP3 или WAV</span></label></div>
+              {batchFiles.length > 0 && <ol className="batch-file-list">{batchFiles.map((file, index) => <li key={index + "-" + file.name}>
+                <span>{file.name}</span><button type="button" className="outline-button" aria-label={"Убрать файл " + file.name}
+                  onClick={() => batchDraft.update((draft) => ({ ...draft, files: draft.files.filter((_, item) => item !== index) }))}><X size={16} /></button>
+              </li>)}</ol>}
+              <label className="batch-cover-toggle"><input type="checkbox" checked={batchIncludeCover} onChange={(event) => {
+                const includeCover = event.currentTarget.checked
+                toggleTelegramCover(includeCover)
+                batchDraft.update((draft) => ({ ...draft, includeCover }))
+              }} /><span>Прикладывать обложку к посту</span></label>
+              {batchIncludeCover && <label className="upload-zone"><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => {
+                const cover = event.currentTarget.files?.[0] ?? null
+                event.currentTarget.value = ""
+                if (!cover) return
+                if (cover.size > 2 * 1024 * 1024) { notify("Обложка должна быть до 2 МБ."); return }
+                batchDraft.update((draft) => ({ ...draft, cover }))
+              }} /><ImagePlus size={24} /><strong>{batchCoverFile?.name ?? "Общая обложка"}</strong><span>JPG, PNG или WEBP до 2 МБ</span></label>}
+              {batchIncludeCover && batchCoverFile && <>
+                <button type="button" className="outline-button batch-remove-cover" onClick={() => batchDraft.update((draft) => ({ ...draft, cover: null }))}>Убрать обложку</button>
+                <label className="field"><span>Подпись к обложке</span><textarea className="batch-caption" maxLength={1024} value={batchCoverCaption} onBlur={(event) => rememberHashtags(event.currentTarget.value)} onChange={(event) => { const coverCaption = event.currentTarget.value; batchDraft.update((draft) => ({ ...draft, coverCaption })) }} placeholder="Необязательно" /></label>
+                {captionTools(batchCoverCaption, (coverCaption) => batchDraft.update((draft) => ({ ...draft, coverCaption })), 'batch')}
               </>}
-              <label className="field"><span>Подпись к аудио</span><textarea className="batch-caption" maxLength={1024} value={batchCaption} onBlur={(event) => rememberHashtags(event.currentTarget.value)} onChange={(event) => setBatchCaption(event.target.value)} placeholder="Необязательно" /></label>
-              {captionTools(batchCaption, setBatchCaption, 'batch')}
+              <label className="field"><span>Подпись к аудио</span><textarea className="batch-caption" maxLength={1024} value={batchCaption} onBlur={(event) => rememberHashtags(event.currentTarget.value)} onChange={(event) => { const caption = event.currentTarget.value; batchDraft.update((draft) => ({ ...draft, caption })) }} placeholder="Необязательно" /></label>
+              {captionTools(batchCaption, (caption) => batchDraft.update((draft) => ({ ...draft, caption })), 'batch')}
 
-              {cloudAvailable && batchBeats.length > 0 && batchBeats.every((beat) => beat.cloud) && batchFiles.length === 0 &&
-                <DirectTelegramPublication channels={channels} initData={webApp?.initData ?? ''} onRecovered={applyTelegramResult} key={batchBeats.map((beat) => beat.id).sort().join(',')} publishedCount={batchBeats.filter((beat) => beat.telegramLink.trim()).length} publish={(attemptId, channel, republish) => publishTelegram(attemptId, channel, batchBeats, batchCaption, includeTelegramCover ? batchCoverFile ?? undefined : undefined, false, includeTelegramCover && batchCoverFile ? batchCoverCaption : '', republish)} />}
+              {lastCaptionTooLong && <p className="video-error" role="alert">Сократи общую подпись или подпись к последнему треку. Вместе они должны занимать до 1024 символов.</p>}
+              {cloudAvailable && batchBeats.length > 0 && !unavailableBatchBeats && batchBeats.every((beat) => beat.cloud) && batchFiles.length === 0 &&
+                <DirectTelegramPublication channels={channels} initData={webApp?.initData ?? ""} onRecovered={applyTelegramResult}
+                  key={batchBeats.map((beat) => beat.id).sort().join(",")} publishedCount={batchBeats.filter((beat) => beat.telegramLink.trim()).length}
+                  hasTrackCredits={hasTrackCredits} blocked={lastCaptionTooLong}
+                  publish={(attemptId, channel, republish) => publishTelegram(attemptId, channel, batchBeats, batchCaption, {
+                    cover: batchIncludeCover ? batchCoverFile ?? undefined : undefined,
+                    coverCaption: batchIncludeCover && batchCoverFile ? batchCoverCaption : "",
+                    trackCredits: hasTrackCredits ? trackCredits : undefined, republish,
+                  })} />}
               {cloudAvailable && (batchFiles.length > 0 || batchBeats.some((beat) => !beat.cloud)) &&
                 <p className="form-hint">Для прямой публикации выбери MP3 из облачной библиотеки. Файлы с устройства можно прикрепить вручную в Telegram.</p>}
               {batchBeats.length > 0 && <p className="form-hint">Ссылка сохранится у всех выбранных битов из библиотеки.</p>}
-            </div>
+            </div>}
             </>}
           </>}
           {screen === 'more' && <>
