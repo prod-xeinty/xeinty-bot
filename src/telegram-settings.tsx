@@ -1,5 +1,5 @@
 import { Dropdown } from './choice-menu'
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { loadTelegramChannelProfile, type ChannelProfile, type TelegramChannel } from './cloud-beats'
 
 const subscriberFormat = new Intl.NumberFormat('ru-RU')
@@ -92,6 +92,33 @@ export function TelegramChannels({ available, initData, channels, loadError, onC
 export type CaptionTemplate = { id: string; name: string; text: string; linkText: string; linkUrl: string }
 export type CaptionPreferences = { templates: CaptionTemplate[]; hashtags: string[] }
 
+const templateFields = { название: 'Название', bpm: 'BPM', тональность: 'Тональность', теги: 'Теги', биты: 'Список битов' }
+type TemplateField = keyof typeof templateFields
+type TemplateValues = Partial<Record<TemplateField, string>>
+const fieldPattern = new RegExp('\\{\\{(' + Object.keys(templateFields).join('|') + ')\\}\\}', 'g')
+const previewValues: TemplateValues = {
+  название: 'NO SIGNAL', bpm: '138', тональность: 'F# minor', теги: '#darktrap',
+  биты: '1. NO SIGNAL — 138 BPM · F# minor\n2. SILHOUETTE — 92 BPM · C minor',
+}
+
+export function beatCaptionValues(beat: { title: string; bpm: string; key: string; tags: string }): TemplateValues {
+  return {
+    название: beat.title.trim(), bpm: beat.bpm === '—' ? '' : beat.bpm.trim(),
+    тональность: beat.key === '—' ? '' : beat.key.trim(), теги: beat.tags === 'без тегов' ? '' : beat.tags.trim(),
+  }
+}
+
+function fillTemplate(text: string, values: TemplateValues) {
+  const missing = new Set<TemplateField>()
+  const filled = text.replace(fieldPattern, (token: string, field: TemplateField) => {
+    const value = values[field]
+    if (value) return value
+    missing.add(field)
+    return token
+  })
+  return { filled, missing }
+}
+
 export function readCaptionPreferences(): CaptionPreferences {
   try {
     const saved = JSON.parse(localStorage.getItem('xeinty-telegram-caption-preferences') ?? '{}')
@@ -104,10 +131,11 @@ export function readCaptionPreferences(): CaptionPreferences {
   } catch { return { templates: [], hashtags: [] } }
 }
 
-export function CaptionTools({ caption, onChange, preferences, youtube = false }: {
+export function CaptionTools({ caption, onChange, preferences, values, youtube = false }: {
   caption: string
   onChange: (caption: string) => void
   preferences: CaptionPreferences
+  values: TemplateValues
   youtube?: boolean
 }) {
   const limit = youtube ? 5000 : 1024
@@ -116,17 +144,25 @@ export function CaptionTools({ caption, onChange, preferences, youtube = false }
     const next = append(value)
     if (next.length <= limit) onChange(next)
   }
-  function templateText(template: CaptionTemplate) {
-    const { text, linkText, linkUrl } = template
+  const templates = preferences.templates.map(({ id, name, text, linkText, linkUrl }) => {
+    const { filled, missing } = fillTemplate(text, values)
     const link = !linkUrl ? '' : youtube ? linkText + ': ' + linkUrl : '[' + linkText + '](' + linkUrl + ')'
-    return [text, link].filter(Boolean).join('\n')
-  }
+    const next = [filled, link].filter(Boolean).join('\n')
+    let group: string | undefined
+    if (missing.has('биты')) group = 'биты' in values ? 'Сначала выбери биты' : 'Для пачки Telegram'
+    else if (missing.size) group = 'биты' in values ? 'Для одного бита' : 'Заполни в карточке · ' + [...missing].map((field) => templateFields[field]).join(', ')
+    else if (next.length > limit) group = 'Слишком длинный текст'
+    return { value: id, label: name, next, disabled: Boolean(group), group }
+  })
+  templates.sort((a, b) => (a.group ?? '').localeCompare(b.group ?? '', 'ru'))
 
   return <div className="caption-tools">
-    {preferences.templates.length ? <Dropdown label="Шаблон" placeholder="Выбрать шаблон" value="" onChange={(value) => {
-      const template = preferences.templates.find((item) => item.id === value)
-      if (template) onChange(templateText(template))
-    }} options={preferences.templates.map((template) => ({ value: template.id, label: template.name, disabled: templateText(template).length > limit }))} /> : <p className="form-hint">Шаблоны можно создать в разделе «Ещё».</p>}
+    {templates.length ? <Dropdown label="Шаблон" placeholder="Выбрать шаблон" value="" onChange={(value) => {
+      const template = templates.find((item) => item.value === value)
+      if (template && !template.disabled) onChange(template.next)
+    }} options={templates} /> : <p className="form-hint">Шаблоны можно создать в разделе «Ещё».</p>}
+    {"биты" in values && preferences.templates.some(({ text }) => text.includes("{{биты}}")) &&
+      <p className="form-hint">Если изменишь состав или порядок пачки, выбери шаблон снова, чтобы обновить список в подписи.</p>}
     {!youtube && preferences.hashtags.length > 0 && <div className="caption-tags" aria-label="Недавние хештеги">
       <span>Недавние хештеги</span>
       {preferences.hashtags.map((tag) => <button type="button" key={tag} className="outline-button"
@@ -144,6 +180,28 @@ export function CaptionTemplates({ templates, onChange }: {
 }) {
   const [draft, setDraft] = useState<CaptionTemplate>()
   const [error, setError] = useState('')
+  const textInput = useRef<HTMLTextAreaElement>(null)
+  const preview = draft ? fillTemplate(draft.text.trim(), previewValues).filled : ''
+
+  function insertField(field: TemplateField) {
+    if (!draft || !textInput.current) return
+    const input = textInput.current
+    const token = '{{' + field + '}}'
+    const position = input.selectionStart
+    const text = draft.text.slice(0, position) + token + draft.text.slice(input.selectionEnd)
+    if (text.length > input.maxLength) {
+      setError('В тексте шаблона нет места для этой подстановки.')
+      return
+    }
+    setError('')
+    setDraft({ ...draft, text })
+    requestAnimationFrame(() => {
+      if (textInput.current !== input) return
+      input.focus()
+      input.setSelectionRange(position + token.length, position + token.length)
+    })
+  }
+
   function save(event: FormEvent) {
     event.preventDefault()
     if (!draft) return
@@ -159,6 +217,10 @@ export function CaptionTemplates({ templates, onChange }: {
         setError('Укажи текст ссылки без квадратных скобок и адрес, начинающийся с https:// или http://.')
         return
       }
+    }
+    if (text.includes('{{биты}}') && (Object.keys(templateFields) as TemplateField[]).some((field) => field !== 'биты' && text.includes('{{' + field + '}}'))) {
+      setError('Список битов используется в шаблоне для пачки. Для данных одного бита создай отдельный шаблон.')
+      return
     }
     if (!name.trim() || (!text.trim() && !url)) {
       setError('Укажи название и добавь текст или ссылку.')
@@ -182,9 +244,19 @@ export function CaptionTemplates({ templates, onChange }: {
     </li>)}</ul>}
     {draft && <form className="caption-template field" onSubmit={save}>
       <label className="field"><span>Название шаблона</span><input required maxLength={80} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} /></label>
-      <label className="field"><span>Текст поста</span><textarea maxLength={1024} value={draft.text} onChange={(e) => setDraft({ ...draft, text: e.target.value })} /></label>
+      <label className="field"><span>Текст поста</span><textarea ref={textInput} maxLength={1024} value={draft.text} onChange={(e) => setDraft({ ...draft, text: e.target.value })} /></label>
+      <div className="caption-tags" role="group" aria-label="Подстановки в шаблон">
+        <span>Вставить данные из карточки или список для пачки</span>
+        {(Object.keys(templateFields) as TemplateField[]).map((field) => <button type="button" key={field}
+          className="outline-button" onClick={() => insertField(field)}>{templateFields[field]}</button>)}
+      </div>
       <label className="field"><span>Текст ссылки</span><input maxLength={160} placeholder="Купить" value={draft.linkText} onChange={(e) => setDraft({ ...draft, linkText: e.target.value })} /></label>
       <label className="field"><span>Адрес ссылки</span><input type="url" maxLength={600} placeholder="https://t.me/твой_ник" value={draft.linkUrl} onChange={(e) => setDraft({ ...draft, linkUrl: e.target.value })} /></label>
+      {(preview || draft.linkText.trim() && draft.linkUrl.trim()) && <section className="caption-preview" aria-label="Пример подписи">
+        <h2>Пример подписи</h2>
+        {preview && <p>{preview}</p>}
+        {draft.linkText.trim() && draft.linkUrl.trim() && <p className="caption-preview-link">{draft.linkText.trim()}</p>}
+      </section>}
       {error && <p className="video-error" role="alert">{error}</p>}
       <div className="video-save-actions">
         <button className="outline-button">Сохранить шаблон</button>
