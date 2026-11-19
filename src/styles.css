@@ -618,3 +618,8 @@ input, textarea { caret-color: #fff; }
 .youtube-upload .video-download { margin-top: 10px; }
 .youtube-upload-progress { display: flex; align-items: center; gap: 10px; margin-top: 12px; color: #ddd; font-size: 12px; }
 .youtube-upload-progress progress { flex: 1; min-width: 0; height: 7px; accent-color: #ddd; }
+
+.cover-edit { margin-top: 16px; }
+.video-file-hint { display: grid; justify-items: start; gap: 10px; }
+.video-file-hint > p { margin: 0; }
+.channel-section-title { margin: 0 0 8px; font-size: 16px; }

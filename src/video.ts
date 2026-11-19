@@ -1,14 +1,17 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg'
 import { toBlobURL } from '@ffmpeg/util'
 
+const videoProfile = { width: 1920, height: 1080, fps: 30, videoMbps: 8, audioKbps: 384, audioHz: 48000 }
+export const videoProfileLabel = `MP4 · H.264 · ${videoProfile.width}×${videoProfile.height} · ${videoProfile.fps} кадров/с · до ${videoProfile.videoMbps} Мбит/с · AAC-LC 48 кГц · стерео ${videoProfile.audioKbps} кбит/с`
+
 export type VideoStage = 'loading' | 'preparing' | 'rendering'
 
 async function imageToJpeg(file: File): Promise<Uint8Array> {
   const image = await createImageBitmap(file)
   try {
     const canvas = document.createElement('canvas')
-    canvas.width = 960
-    canvas.height = 540
+    canvas.width = videoProfile.width
+    canvas.height = videoProfile.height
     const context = canvas.getContext('2d')
     if (!context) throw new Error('Не удалось подготовить обложку')
     context.fillStyle = '#111111'
@@ -46,10 +49,11 @@ export async function makeStaticVideo(audio: File, cover: File, onStage: (stage:
     await ffmpeg.writeFile(audioName, new Uint8Array(await audio.arrayBuffer()))
     onStage('rendering')
     const code = await ffmpeg.exec([
-      '-loop', '1', '-framerate', '15', '-i', 'cover.jpg',
+      '-loop', '1', '-framerate', String(videoProfile.fps), '-i', 'cover.jpg',
       '-i', audioName, '-c:v', 'libx264', '-preset', 'ultrafast',
       '-tune', 'stillimage', '-pix_fmt', 'yuv420p',
-      '-c:a', 'aac', '-b:a', '192k', '-shortest',
+      '-b:v', videoProfile.videoMbps + 'M', '-maxrate', videoProfile.videoMbps + 'M', '-bufsize', videoProfile.videoMbps * 2 + 'M',
+      '-c:a', 'aac', '-profile:a', 'aac_low', '-ar', String(videoProfile.audioHz), '-ac', '2', '-b:a', videoProfile.audioKbps + 'k', '-shortest',
       '-movflags', '+faststart', 'output.mp4',
     ])
     if (code !== 0) throw new Error('Не удалось собрать MP4 из этих файлов')

@@ -34,11 +34,13 @@ await page.route('https://telegram.org/**', (route) => route.fulfill({ status: 2
 try {
   await page.goto(url)
   await page.getByRole('button', { name: /Добавить свой бит/ }).click()
-  await page.getByPlaceholder('Например, NO SIGNAL').fill('Test Video')
   await page.locator('input[type=file][accept^="audio/"]').setInputFiles({ name: 'tone.wav', mimeType: 'audio/wav', buffer: sampleWav() })
-  await page.locator('input[type=file][accept="image/*"]').setInputFiles({ name: 'cover.png', mimeType: 'image/png', buffer: await readFile('src/assets/monochrome-portrait.png') })
+  await page.locator('input[type=file][accept^="image/jpeg"]').setInputFiles({ name: 'cover.png', mimeType: 'image/png', buffer: await readFile('src/assets/monochrome-portrait.png') })
+  await page.getByPlaceholder('Например, NO SIGNAL').fill('Test Video')
   await page.getByRole('button', { name: /Создать черновик/ }).click()
-  await page.getByRole('tab', { name: 'Публикация' }).click()
+  await page.getByRole('heading', { name: 'Данные бита' }).waitFor()
+  await page.getByRole('navigation', { name: 'Главная навигация' }).getByRole('button', { name: 'Публикация' }).click()
+  await page.getByRole('tab', { name: 'YouTube' }).click()
   await page.getByRole('button', { name: 'Собрать MP4' }).click()
   try {
     await page.getByRole('button', { name: 'Сохранить MP4' }).waitFor({ timeout: process.env.VIDEO_QA_URL ? 90000 : 30000 })
@@ -54,7 +56,7 @@ try {
     const text = new TextDecoder('latin1').decode(data)
     return { width: video.videoWidth, height: video.videoHeight, duration: video.duration, bytes: data.length, header: text.slice(4, 8), hasAudio: text.includes('soun') }
   })
-  if (result.width !== 960 || result.height !== 540 || result.duration < 2.5 || result.duration > 3.5 || result.header !== 'ftyp' || !result.hasAudio) throw new Error(`Invalid MP4: ${JSON.stringify(result)}`)
+  if (result.width !== 1920 || result.height !== 1080 || result.duration < 2.5 || result.duration > 3.5 || result.header !== 'ftyp' || !result.hasAudio) throw new Error(`Invalid MP4: ${JSON.stringify(result)}`)
   await page.getByRole('button', { name: 'Сохранить MP4' }).click()
   await page.waitForFunction(() => window.__savedVideoBytes > 0)
   const saved = await page.evaluate(() => ({ name: window.__savedVideoName, bytes: window.__savedVideoBytes }))

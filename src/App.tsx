@@ -1,10 +1,10 @@
-import { YoutubeUpload } from './youtube-upload'
+import { YoutubeChannelSettings, YoutubeUpload } from './youtube-upload'
 import xeintyLogo from './assets/xeinty-logo.png'
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { ArrowLeft, ArrowRight, AudioLines, Check, ChevronRight, CircleHelp, Clipboard, Disc3, Download, ExternalLink, FileAudio2, ImagePlus, Link2, ListMusic, Music2, Ellipsis, Plus, Radio, Send, Trash2, UploadCloud } from 'lucide-react'
 import { AudioDock, PlayPauseIcon, useAudioPlayer } from './audio-player'
 import { getTelegramWebApp } from './telegram'
-import { makeStaticVideo, type VideoStage } from './video'
+import { makeStaticVideo, videoProfileLabel, type VideoStage } from './video'
 import { saveVideoFile } from './save-video'
 import { deleteStoredBeat, loadStoredBeats, saveBeatCover, saveBeatMetadata, saveNewBeat, type StoredBeat } from './beat-store'
 import { cloudConfigured, connectTelegramChannel, disconnectTelegramChannel, loadTelegramChannels, type TelegramChannel, createCloudBeat, deleteCloudBeat, loadCloudBeats, publishCloudTelegram, remoteFile, replaceCloudCover, updateCloudBeat } from './cloud-beats'
@@ -633,8 +633,8 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
                 {videoSource === 'own' ? <OwnYoutubeVideo key={selected.id} file={selectedOwnVideo} onChange={(file) => setOwnVideo(file ? { beatId: selected.id, file } : undefined)} /> : <>
                   <button className="primary-button video-action" type="button" onClick={createVideo} disabled={videoStage !== null}>{videoStage ? 'Сборка идёт…' : 'Собрать MP4'} {!videoStage && <ArrowRight size={18} />}</button>
                   {videoStage && <p className="video-status" role="status">{videoStage === 'loading' ? 'Загружаем видеодвижок — около 31 МБ…' : videoStage === 'preparing' ? 'Подготавливаем файлы…' : 'Собираем видео. Не закрывай Telegram…'}</p>}
-                  <p className="video-hint">MP4 · 960×540 (540p) · 15 кадров/с · AAC 192 кбит/с</p>
-                  {videoFileHintId === selected.id && missingVideoFiles && <div>
+                  <p className="video-hint">{videoProfileLabel}</p>
+                  {videoFileHintId === selected.id && missingVideoFiles && <div className="video-file-hint">
                     <p className="video-error" role="alert">Для сборки MP4 не хватает {missingVideoFiles}.</p>
                     <button type="button" className="outline-button" onClick={() => openBeat(selected)}>Открыть карточку бита <ArrowRight size={16} /></button>
                   </div>}
@@ -645,7 +645,6 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
               {cloudAvailable && selected.cloud && webApp?.initData && <YoutubeUpload
                 key={selected.id + ':' + youtubeFileKey} initData={webApp.initData} beatId={selected.id}
                 video={youtubeVideo} fileKey={youtubeFileKey} existingLink={selected.youtubeLink}
-                openLink={webApp.openLink ? (url) => webApp.openLink?.(url) : undefined}
                 beforeStart={async () => {
                   window.clearTimeout(cloudSaveTimersRef.current.get(selected.id))
                   cloudSaveTimersRef.current.delete(selected.id)
@@ -695,7 +694,10 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
           </>}
           {screen === 'channels' && <>
             <div className="page-heading"><div><h1>Каналы</h1><p>Куда XEINTY может публиковать биты.</p></div></div>
+            <h2 className="channel-section-title">Telegram</h2>
             <TelegramChannels available={cloudAvailable} channels={channels} loadError={channelLoadError} onConnect={addChannel} onDisconnect={removeChannel} />
+            <YoutubeChannelSettings initData={cloudAvailable ? webApp?.initData : undefined}
+              openLink={webApp?.openLink ? (url) => webApp.openLink?.(url) : undefined} />
           </>}
           {screen === 'overview' && <>
             <div className="page-heading"><div><h1>Статистика</h1><p>Статистика всех опубликованных битов.</p></div></div><div className="overview-hero"><div className="overview-symbol"><AudioLines size={28} /></div><h2>Статистика появится позже</h2><p>Просмотры и динамика битов станут доступны после подключения Telegram и YouTube. Сейчас источники не подключены.</p><button className="outline-button" onClick={() => navigate('library')}>Вернуться к битам <ArrowRight size={18} /></button></div><div className="future-grid"><div><Radio size={22} /><strong>Telegram</strong><span>Статистика постов канала</span></div><div><Disc3 size={22} /><strong>YouTube</strong><span>Просмотры и публикации</span></div></div>
