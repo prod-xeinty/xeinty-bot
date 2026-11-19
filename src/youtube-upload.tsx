@@ -42,7 +42,7 @@ function storeSession(key: string, value: string | null) {
   } catch { /* Upload can still resume while this screen is open. */ }
 }
 
-export function YoutubeUpload({ initData, beatId, video, fileKey, existingLink, existingPublishAt, beforeStart, onSaved, onNotice }: {
+export function YoutubeUpload({ initData, beatId, video, fileKey, existingLink, existingPublishAt, beforeStart, onSaved, onNotice, openSchedule }: {
   initData: string
   beatId: string
   video?: Blob
@@ -52,6 +52,7 @@ export function YoutubeUpload({ initData, beatId, video, fileKey, existingLink, 
   beforeStart: () => Promise<void>
   onSaved: (result: YoutubeUploadResult) => void
   onNotice: (message: string) => void
+  openSchedule: () => void
 }) {
   const key = 'xeinty-youtube-upload:' + beatId + ':' + fileKey
   const beatUploadKey = 'xeinty-youtube-pending:' + beatId
@@ -215,6 +216,7 @@ export function YoutubeUpload({ initData, beatId, video, fileKey, existingLink, 
     {result && <div className="stats-notice" role="status"><div>
       <strong>{result.saved ? (result.publishAt ? 'Выход видео запланирован' : 'Видео успешно загружено') : 'Видео загружено'}</strong>
       <p>{result.saved ? 'Ссылка сохранена у бита. YouTube может ещё обрабатывать видео.' : 'Ссылка пока не сохранилась. Можно повторить сохранение.'}</p>
+      {result.saved && result.publishAt && <button type="button" className="outline-button youtube-open-schedule" onClick={openSchedule}>К расписанию</button>}
     </div></div>}
   </div>
 }

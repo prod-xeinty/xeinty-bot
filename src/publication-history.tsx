@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { ArrowUpRight, Play, Send } from 'lucide-react'
 import { Dropdown } from './choice-menu'
 import { YoutubeReleaseTime } from './youtube-upload'
@@ -58,18 +58,24 @@ function channelName(post: BeatPublication, channels: TelegramChannel[]) {
   return username ? channels.find((channel) => channel.username?.toLowerCase() === username.toLowerCase())?.title ?? '@' + username : ''
 }
 
-export function PublicationHistory({ beat, channels, stats, save, openPublication, manageSchedule, openChannels }: {
+export function PublicationHistory({ beat, channels, stats, save, openPublication, manageSchedule, openChannels, focusedUrl }: {
   beat: PublicationSource & { id: string; isDemo?: boolean }; channels: TelegramChannel[];
   stats: Record<StatsPlatform, PlatformStats | undefined>;
   save: (platform: StatsPlatform, url: string) => Promise<void>; openPublication: () => void;
   manageSchedule?: (url: string, expectedPublishAt: string, publishAt: string | null) => Promise<YoutubeScheduleResult>;
-  openChannels: () => void
+  openChannels: () => void; focusedUrl?: string
 }) {
   const [platform, setPlatform] = useState<StatsPlatform>('telegram')
   const [value, setValue] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const posts = getBeatPublications(beat)
+  const focused = useRef<HTMLLIElement>(null)
+  useEffect(() => {
+    if (!focusedUrl) return
+    const frame = requestAnimationFrame(() => focused.current?.scrollIntoView({block: 'nearest'}))
+    return () => cancelAnimationFrame(frame)
+  }, [focusedUrl])
 
   async function submit(event: FormEvent) {
     event.preventDefault()
@@ -103,7 +109,8 @@ export function PublicationHistory({ beat, channels, stats, save, openPublicatio
         [telegram ? 'Просмотры поста' : 'Просмотры', metrics?.views],
         [telegram ? 'Реакции' : 'Лайки', telegram ? metrics?.reactions : metrics?.likes],
       ].flatMap(([label, value]) => typeof value === 'number' ? [{label, value}] : [])
-      return <li key={post.platform + ':' + post.url} className="history-row">
+      return <li key={post.platform + ':' + post.url} className="history-row"
+        data-focused={post.url === focusedUrl ? true : undefined} ref={post.url === focusedUrl ? focused : undefined}>
         <span className="platform-icon" aria-hidden="true">{post.platform === 'telegram' ? <Send size={16} /> : <Play size={17} />}</span>
         <div className="history-row-body">
           <strong>{names[post.platform]}{channel && ' · ' + channel}</strong>
