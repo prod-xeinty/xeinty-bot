@@ -4,6 +4,7 @@ import { StringSession } from 'npm:telegram@2.26.22/sessions/index.js'
 import { LogLevel } from 'npm:telegram@2.26.22/extensions/Logger.js'
 import bigInteger from 'npm:big-integer@1.6.52'
 import { channelForPublisher } from './telegram-publish.ts'
+import { dailyViews, publicationLinks } from './publication-history.ts'
 
 type PostStats = { views: number | null; reactions: number | null; comments: number | null; forwards: number | null }
 let connection: Promise<TelegramClient> | undefined
@@ -48,12 +49,7 @@ function botChatId(channel: string) {
 }
 
 export async function telegramStats(db: SupabaseClient, userId: number) {
-  const { data, error } = await db.from('beats').select('id,telegram_link')
-    .eq('telegram_user_id', userId).order('created_at', { ascending: false }).limit(200)
-  if (error) throw error
-  const rows = (data ?? []).filter((beat) => beat.telegram_link?.trim()).map((beat) => ({
-    beatId: beat.id as string, link: beat.telegram_link as string, post: telegramPost(beat.telegram_link),
-  }))
+  const rows = (await publicationLinks(db, userId, 'telegram')).map((row) => ({ ...row, post: telegramPost(row.link) }))
   const privateChannels = new Set(rows.flatMap(({ post }) => post?.private ? [botChatId(post.channel)] : []))
   const connected = new Set<string>()
   if (privateChannels.size) {
@@ -117,12 +113,15 @@ export async function telegramStats(db: SupabaseClient, userId: number) {
     return counts.length ? counts.reduce((total, count) => total + count, 0) : null
   }
   const totalViews = sum('views')
-  return {
-    entries: rows.map(({ beatId, link, post }) => ({
-      beatId, link, views: null,
-      restricted: Boolean(post?.private && refused.has(post.channel)),
-      ...metrics.get(postKeys.get(post ? post.channel + '/' + post.id : '') ?? ''),
-    })),
+  const data = {
+    entries: rows.map(({ beatId, link, post }) => {
+      const mediaKey = postKeys.get(post ? post.channel + '/' + post.id : '')
+      return {
+        beatId, link, mediaKey, views: null,
+        restricted: Boolean(post?.private && refused.has(post.channel)),
+        ...metrics.get(mediaKey ?? ''),
+      }
+    }),
     totalViews: totalViews ?? 0,
     totals: { views: totalViews, reactions: sum('reactions'), comments: sum('comments'), forwards: sum('forwards') },
     videosWithViews: values.filter(({ views }) => views !== null).length,
@@ -134,4 +133,6 @@ export async function telegramStats(db: SupabaseClient, userId: number) {
     unsupported: rows.some(({ post }) => post === null),
     fetchedAt: new Date().toISOString(),
   }
+  const series = await dailyViews(db, userId, 'telegram', data).catch(() => null)
+  return { ...data, series }
 }

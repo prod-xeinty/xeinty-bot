@@ -1,4 +1,5 @@
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2'
+import { dailyViews, publicationLinks } from './publication-history.ts'
 
 const scope = 'https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly'
 const chunkSize = 2 * 1024 * 1024
@@ -117,21 +118,14 @@ function linkedVideoId(link: string): string | null {
 }
 
 async function youtubeStats(db: SupabaseClient, userId: number, cfg: NonNullable<ReturnType<typeof config>>): Promise<Result> {
-  const { data, error } = await db.from('beats').select('id,youtube_link')
-    .eq('telegram_user_id', userId).order('created_at', { ascending: false }).limit(200)
-  if (error) throw error
-  const rows = (data ?? []).filter((beat) => beat.youtube_link?.trim()).map((beat) => ({
-    beatId: beat.id as string,
-    link: beat.youtube_link as string,
-    videoId: linkedVideoId(beat.youtube_link),
-  }))
+  const rows = (await publicationLinks(db, userId, 'youtube')).map((row) => ({ ...row, videoId: linkedVideoId(row.link) }))
   const ids = [...new Set(rows.flatMap((row) => row.videoId ? [row.videoId] : []))]
-  const metrics = new Map<string, { views: number | null; likes: number | null; comments: number | null }>()
+  const metrics = new Map<string, { views: number | null; likes: number | null; comments: number | null; channel?: string; visibility?: string }>()
   if (ids.length) {
     const access = await accessToken(db, userId, cfg)
     const batches = Array.from({ length: Math.ceil(ids.length / 50) }, (_, index) => ids.slice(index * 50, index * 50 + 50))
     await Promise.all(batches.map(async (batch) => {
-      const params = new URLSearchParams({ part: 'statistics', id: batch.join(','), fields: 'items(id,statistics(viewCount,likeCount,commentCount))' })
+      const params = new URLSearchParams({ part: 'statistics,snippet,status', id: batch.join(','), fields: 'items(id,snippet(channelTitle),status(privacyStatus),statistics(viewCount,likeCount,commentCount))' })
       const response = await fetch('https://www.googleapis.com/youtube/v3/videos?' + params, {
         headers: { Authorization: 'Bearer ' + access }, signal: AbortSignal.timeout(10_000),
       })
@@ -142,26 +136,28 @@ async function youtubeStats(db: SupabaseClient, userId: number, cfg: NonNullable
         if (response.status === 403 && insufficient) throw new YoutubeError('Обнови доступ к YouTube во вкладке «Каналы».', 403)
         throw new YoutubeError('Не удалось получить просмотры с YouTube. Попробуй обновить позже.', 502)
       }
-      const parsed: { items?: { id: string; statistics?: { viewCount?: string; likeCount?: string; commentCount?: string } }[] } = await response.json()
+      const parsed: { items?: { id: string; snippet?: { channelTitle?: string }; status?: { privacyStatus?: string }; statistics?: { viewCount?: string; likeCount?: string; commentCount?: string } }[] } = await response.json()
       for (const video of parsed.items ?? []) {
         const count = (value?: string) => value !== undefined && /^\d+$/.test(value) && Number.isSafeInteger(Number(value)) ? Number(value) : null
-        metrics.set(video.id, { views: count(video.statistics?.viewCount), likes: count(video.statistics?.likeCount), comments: count(video.statistics?.commentCount) })
+        metrics.set(video.id, { views: count(video.statistics?.viewCount), likes: count(video.statistics?.likeCount), comments: count(video.statistics?.commentCount), channel: video.snippet?.channelTitle, visibility: video.status?.privacyStatus })
       }
     }))
   }
   const values = [...metrics.values()]
-  const sum = (key: keyof (typeof values)[number]) => {
+  const sum = (key: 'views' | 'likes' | 'comments') => {
     const counts = values.flatMap((entry) => entry[key] === null ? [] : [entry[key]])
     return counts.length ? counts.reduce((total, count) => total + count, 0) : null
   }
-  return { data: {
-    entries: rows.map(({ beatId, link, videoId }) => ({ beatId, link, views: null, ...metrics.get(videoId ?? '') })),
+  const data = {
+    entries: rows.map(({ beatId, link, videoId }) => ({ beatId, link, mediaKey: videoId, views: null, ...metrics.get(videoId ?? '') })),
     totalViews: sum('views') ?? 0,
     totals: { views: sum('views'), likes: sum('likes'), comments: sum('comments') },
     videosWithViews: values.filter((entry) => entry.views !== null).length,
     linkedVideos: ids.length,
     fetchedAt: new Date().toISOString(),
-  } }
+  }
+  const series = await dailyViews(db, userId, 'youtube', data).catch(() => null)
+  return { data: { ...data, series } }
 }
 
 async function finishUpload(db: SupabaseClient, userId: number, upload: Upload, videoId: string): Promise<Result> {

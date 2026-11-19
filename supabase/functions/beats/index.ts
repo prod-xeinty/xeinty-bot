@@ -143,7 +143,7 @@ Deno.serve(async (request) => {
     }
 
     if (action === 'list') {
-      const { data, error } = await db.from('beats').select('*').eq('telegram_user_id', userId).order('created_at', { ascending: false }).limit(200)
+      const { data, error } = await db.from('beats').select('*,beat_publications(platform,url,saved_at,publish_at)').eq('telegram_user_id', userId).order('created_at', { ascending: false }).limit(200)
       if (error) throw error
       const beats = await Promise.all((data ?? []).map(async (beat) => {
         const [audio, cover] = await Promise.all([
@@ -158,6 +158,9 @@ Deno.serve(async (request) => {
           telegramCaption: beat.telegram_caption, youtubeDescription: beat.youtube_description,
           youtubeKeywords: beat.youtube_keywords, telegramLink: beat.telegram_link,
           youtubeLink: beat.youtube_link, youtubePublishAt: beat.youtube_publish_at,
+          publications: beat.beat_publications.map((post: { platform: string; url: string; saved_at: string | null; publish_at: string | null }) => ({
+            platform: post.platform, url: post.url, savedAt: post.saved_at, publishAt: post.publish_at,
+          })),
         }
       }))
       return reply({ beats }, 200, origin)

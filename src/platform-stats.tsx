@@ -1,6 +1,8 @@
 import { useEffect, useState, type CSSProperties } from 'react'
 import { ChevronRight, Music2 } from 'lucide-react'
 import { loadPlatformStats, type PlatformStats, type PostMetrics, type StatsPlatform } from './cloud-beats'
+import { getBeatPublications } from './publication-history'
+import type { StoredBeat } from './beat-store'
 
 const numberFormat = new Intl.NumberFormat('ru-RU')
 const timeFormat = new Intl.DateTimeFormat('ru-RU', { dateStyle: 'short', timeStyle: 'short' })
@@ -29,7 +31,7 @@ export function usePlatformStats(platform: StatsPlatform, initData?: string, act
 }
 
 type StatsState = ReturnType<typeof usePlatformStats>
-type LinkedBeat = { id: string; title: string; youtubeLink: string; telegramLink: string; cloud?: boolean; coverUrl?: string }
+type LinkedBeat = Pick<StoredBeat, 'id' | 'title' | 'youtubeLink' | 'youtubePublishAt' | 'telegramLink' | 'publications'> & { cloud?: boolean; coverUrl?: string }
 const platformNames = { youtube: 'YouTube', telegram: 'Telegram' }
 const metricLabels = { views: 'Просмотры', likes: 'Лайки', reactions: 'Реакции', comments: 'Комментарии', forwards: 'Пересылки', saves: 'Сохранения' }
 const platformMetrics: Record<StatsPlatform, (keyof PostMetrics)[]> = {
@@ -37,13 +39,57 @@ const platformMetrics: Record<StatsPlatform, (keyof PostMetrics)[]> = {
   telegram: ['views', 'reactions', 'comments', 'forwards', 'saves'],
 }
 
-function linkedPost(beat: LinkedBeat, platform: StatsPlatform) {
-  return platform === 'youtube' ? beat.youtubeLink : beat.telegramLink
+function linksFor(beat: LinkedBeat, platform: StatsPlatform) {
+  return getBeatPublications(beat).filter((post) => post.platform === platform).map((post) => post.url)
 }
 
 function readMetrics(stats: PlatformStats | undefined, beat: LinkedBeat, platform: StatsPlatform) {
-  if (!beat.cloud) return undefined
-  return stats?.entries.find((entry) => entry.beatId === beat.id && entry.link === linkedPost(beat, platform))
+  if (!beat.cloud || !stats) return undefined
+  const links = new Set(linksFor(beat, platform))
+  const unique = new Map<string, PlatformStats['entries'][number]>()
+  for (const entry of stats.entries) {
+    if (entry.beatId === beat.id && links.has(entry.link)) unique.set(entry.mediaKey ?? entry.link, entry)
+  }
+  const totals: PostMetrics & {restricted: boolean} = {views: null, restricted: false}
+  for (const entry of unique.values()) {
+    if (entry.restricted) totals.restricted = true
+    for (const key of platformMetrics[platform]) {
+      if (typeof entry[key] === 'number') totals[key] = (totals[key] ?? 0) + entry[key]
+    }
+  }
+  return totals
+}
+
+const chartDay = new Intl.DateTimeFormat('ru-RU', {day: 'numeric', month: 'short', timeZone: 'UTC'})
+
+function ViewsHistory({ stats }: { stats?: PlatformStats }) {
+  const [days, setDays] = useState<7 | 30>(7)
+  if (!stats) return null
+  const maximumDate = stats.fetchedAt.slice(0, 10)
+  const minimumDay = Date.parse(maximumDate) - (days - 1) * 86_400_000
+  const minimumDate = new Date(minimumDay).toISOString().slice(0, 10)
+  const points = stats.series?.filter((point) => point.day >= minimumDate) ?? []
+  const maximum = Math.max(1, ...points.map((point) => point.views))
+  return <section className="view-history" aria-label="Динамика просмотров">
+    <div className="stats-list-heading"><h2>Динамика просмотров</h2>
+      <div className="view-history-period" role="group" aria-label="Период графика">
+        {([7, 30] as const).map((range) => <button key={range} type="button" aria-pressed={days === range}
+          onClick={() => setDays(range)}>{range} дней</button>)}
+      </div>
+    </div>
+    {points.length > 1 ? <>
+      <ol className="view-history-chart" aria-label="Всего просмотров по дням" style={{ gridTemplateColumns: "repeat(" + days + ", minmax(0, 1fr))" }}>
+        {points.map((point) => {
+          const label = chartDay.format(Date.parse(point.day)) + ' · ' + numberFormat.format(point.views)
+          return <li key={point.day} title={label} aria-label={label}
+            style={{ gridColumn: Math.round((Date.parse(point.day) - minimumDay) / 86_400_000) + 1, '--bar-height': (point.views / maximum * 100) + '%' } as CSSProperties}><span /></li>
+        })}
+      </ol>
+      <div className="view-history-axis"><time dateTime={minimumDate}>{chartDay.format(minimumDay)}</time>
+        <time dateTime={maximumDate}>{chartDay.format(Date.parse(maximumDate))}</time></div>
+      <p className="form-hint">Всего просмотров на день замера. Даты указаны по UTC.</p>
+    </> : <p className="form-hint">{stats.series === null ? 'История просмотров временно недоступна.' : 'График появится после замеров за два разных дня. Замер сохраняется при обновлении статистики.'}</p>}
+  </section>
 }
 
 function MetricCards({ platform, metrics }: { platform: StatsPlatform; metrics?: PostMetrics }) {
@@ -74,7 +120,7 @@ export function StatsOverview({ platform, setPlatform, beats, state, openBeat, o
   beats: LinkedBeat[]; state: StatsState; openBeat: (id: string) => void;
   openChannels: () => void; openPublication: () => void
 }) {
-  const linked = beats.filter((beat) => beat.cloud && linkedPost(beat, platform).trim())
+  const linked = beats.filter((beat) => beat.cloud && linksFor(beat, platform).length > 0)
   const result = state.stats
   const rows = linked.map((beat) => ({ ...beat, views: readMetrics(result, beat, platform)?.views ?? null }))
     .sort((a, b) => (b.views ?? -1) - (a.views ?? -1))
@@ -96,6 +142,7 @@ export function StatsOverview({ platform, setPlatform, beats, state, openBeat, o
         <span>Прочерк означает, что данных нет. Счётчик сохранений пока недоступен.</span>
       </div>
       <StatsControls state={state} openChannels={openChannels} />
+      <ViewsHistory stats={result} />
       <div className="stats-list-heading"><h2>По битам</h2><span>Просмотры</span></div>
       <ul className="youtube-stats-list" aria-label="Просмотры по битам">{rows.map((beat) => <li key={beat.id}>
         <button type="button" onClick={() => openBeat(beat.id)}>
@@ -114,7 +161,7 @@ export function StatsOverview({ platform, setPlatform, beats, state, openBeat, o
 export function BeatPlatformStats({ beat, platform, state, openChannels }: {
   beat: LinkedBeat; platform: StatsPlatform; state: StatsState; openChannels: () => void
 }) {
-  if (!linkedPost(beat, platform).trim()) return null
+  if (linksFor(beat, platform).length === 0) return null
   const metrics = readMetrics(state.stats, beat, platform)
   return <section className="youtube-beat-views" aria-label={'Статистика ' + platformNames[platform]}>
     <h3>{platformNames[platform]}</h3>
