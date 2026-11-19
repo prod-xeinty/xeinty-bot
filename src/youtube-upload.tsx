@@ -1,11 +1,26 @@
 import { useEffect, useRef, useState } from 'react'
+import { Dropdown } from './choice-menu'
 import { ChannelIdentity } from './telegram-settings'
 import {
   createYoutubeConnection, disconnectYoutube, loadYoutubeChannelProfile, resumeYoutubeUpload, sendYoutubeChunk,
-  startYoutubeUpload, youtubeConnection, type ChannelProfile, type YoutubeConnection, type YoutubeUploadStep,
+  startYoutubeUpload, youtubeConnection, type ChannelProfile, type YoutubeConnection, type YoutubeUploadResult, type YoutubeUploadStep, type YoutubeVisibility,
 } from './cloud-beats'
 
 const chunkSize = 2 * 1024 * 1024
+const visibilityOptions: { value: YoutubeVisibility; label: string }[] = [
+  { value: 'public', label: 'Открытое' },
+  { value: 'unlisted', label: 'По ссылке' },
+  { value: 'private', label: 'Приватное' },
+]
+const releaseTimeFormat = new Intl.DateTimeFormat('ru-RU', { dateStyle: 'medium', timeStyle: 'long' })
+
+export function YoutubeReleaseTime({ publishAt }: { publishAt: string }) {
+  const time = Date.parse(publishAt)
+  if (!Number.isFinite(time)) return null
+  return <p className="form-hint">{time > Date.now() ? 'Запланировано на ' : 'Выход был запланирован на '}
+    <time dateTime={publishAt}>{releaseTimeFormat.format(time)}</time>
+  </p>
+}
 
 function encodeChunk(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -27,14 +42,15 @@ function storeSession(key: string, value: string | null) {
   } catch { /* Upload can still resume while this screen is open. */ }
 }
 
-export function YoutubeUpload({ initData, beatId, video, fileKey, existingLink, beforeStart, onSaved, onNotice }: {
+export function YoutubeUpload({ initData, beatId, video, fileKey, existingLink, existingPublishAt, beforeStart, onSaved, onNotice }: {
   initData: string
   beatId: string
   video?: Blob
   fileKey: string
   existingLink: string
+  existingPublishAt?: string | null
   beforeStart: () => Promise<void>
-  onSaved: (url: string) => void
+  onSaved: (result: YoutubeUploadResult) => void
   onNotice: (message: string) => void
 }) {
   const key = 'xeinty-youtube-upload:' + beatId + ':' + fileKey
@@ -43,7 +59,10 @@ export function YoutubeUpload({ initData, beatId, video, fileKey, existingLink, 
   const [progress, setProgress] = useState(0)
   const [confirmRepeat, setConfirmRepeat] = useState(false)
   const [confirming, setConfirming] = useState(false)
-  const [result, setResult] = useState<{ url: string; saved: boolean }>()
+  const [visibility, setVisibility] = useState<YoutubeVisibility>('public')
+  const [scheduled, setScheduled] = useState(false)
+  const [releaseTime, setReleaseTime] = useState('')
+  const [result, setResult] = useState<YoutubeUploadResult>()
   const [error, setError] = useState('')
   const request = useRef<AbortController>(null)
   const session = useRef(readSession(key))
@@ -63,9 +82,16 @@ export function YoutubeUpload({ initData, beatId, video, fileKey, existingLink, 
   }, [initData])
 
   const alreadyPublished = Boolean(existingLink.trim() || result?.saved)
+  const publishAt = result ? result.publishAt : existingPublishAt
+  const actionLabel = scheduled ? 'Запланировать выход' : visibility === 'public' ? 'Опубликовать сейчас' : 'Загрузить видео'
 
   async function upload(republish = false) {
     if (!video || request.current || (alreadyPublished && !republish && !session.current)) return
+    const releaseTimestamp = scheduled && !session.current ? Date.parse(releaseTime) : undefined
+    if (releaseTimestamp !== undefined && (!Number.isFinite(releaseTimestamp) || releaseTimestamp <= Date.now())) {
+      setError('Укажи дату и время выхода в будущем.')
+      return
+    }
     const controller = new AbortController()
     request.current = controller
     setUploading(true)
@@ -79,7 +105,8 @@ export function YoutubeUpload({ initData, beatId, video, fileKey, existingLink, 
       await beforeStart()
       if (controller.signal.aborted) return
       await startYoutubeUpload(initData, {
-        uploadId, beatId, size: video.size, mimeType: video.type || 'application/octet-stream', madeForKids: false, republish,
+        uploadId, beatId, size: video.size, mimeType: video.type || 'application/octet-stream', madeForKids: false, republish, visibility,
+        publishAt: releaseTimestamp === undefined ? undefined : new Date(releaseTimestamp).toISOString(),
       })
       session.current = uploadId
       storeSession(key, uploadId)
@@ -106,11 +133,11 @@ export function YoutubeUpload({ initData, beatId, video, fileKey, existingLink, 
       if (controller.signal.aborted) return
       setProgress(100)
       setResult(step)
-      onNotice(step.saved ? 'Видео успешно загружено на YouTube' : 'Видео загружено, ссылка пока не сохранена')
+      onNotice(step.saved ? (step.publishAt ? 'Выход видео запланирован' : 'Видео успешно загружено на YouTube') : 'Видео загружено, ссылка пока не сохранена')
       if (step.saved) {
         session.current = null
         storeSession(key, null)
-        onSaved(step.url)
+        onSaved(step)
       }
     } catch (failure) {
       if (!controller.signal.aborted) {
@@ -134,17 +161,34 @@ export function YoutubeUpload({ initData, beatId, video, fileKey, existingLink, 
     {connection?.configured === false && <p className="form-hint">Подключение Google пока не настроено. Можно загрузить видео через YouTube Studio.</p>}
     {connection?.configured && !connection.connected && <p className="form-hint">Подключи YouTube во вкладке «Каналы», чтобы загружать видео напрямую.</p>}
     {connection?.connected && <>
-      <p className="form-hint">YouTube подключён. Видео будет доступно только тебе.</p>
+      {!session.current && (!alreadyPublished || confirmRepeat) && <div className="youtube-release-options">
+        <Dropdown label="Видимость" value={visibility} disabled={uploading || scheduled} options={visibilityOptions}
+          onChange={(value) => setVisibility(value as YoutubeVisibility)} />
+        <label className="batch-cover-toggle">
+          <input type="checkbox" checked={scheduled} disabled={uploading} onChange={(event) => {
+            setScheduled(event.target.checked)
+            if (event.target.checked) setVisibility('public')
+            setError('')
+          }} />
+          <span>Запланировать выход</span>
+        </label>
+        {scheduled && <label className="field">
+          <span>Дата и время выхода</span>
+          <input type="datetime-local" value={releaseTime} disabled={uploading}
+            onChange={(event) => { setReleaseTime(event.target.value); setError('') }} />
+          <small>Часовой пояс устройства · {Intl.DateTimeFormat().resolvedOptions().timeZone}</small>
+        </label>}
+      </div>}
       {!video && <p className="form-hint">Собери видео или выбери файл с устройства.</p>}
       {alreadyPublished && !uploading && !session.current ? <>
-        <p className="form-hint">У бита уже есть публикация на YouTube.</p>
+        <p className="form-hint">{publishAt && Date.parse(publishAt) > Date.now() ? 'У бита уже запланирован выход на YouTube.' : 'У бита уже есть видео на YouTube.'}</p>
         {confirmRepeat ? <>
           <p className="form-hint">Загрузить новое видео для этого бита?</p>
-          <button type="button" className="copy-button" disabled={!video} onClick={() => void upload(true)}>Подтвердить повторную публикацию</button>
+          <button type="button" className="copy-button" disabled={!video} onClick={() => void upload(true)}>{scheduled ? 'Подтвердить запланированный выход' : 'Подтвердить повторную публикацию'}</button>
           <button type="button" className="copy-button copy-button--subtle" onClick={() => setConfirmRepeat(false)}>Отмена</button>
         </> : <button type="button" className="copy-button" disabled={!video} onClick={() => setConfirmRepeat(true)}>Опубликовать заново</button>}
       </> : <button type="button" className="copy-button" disabled={!video || uploading} onClick={() => void upload()}>
-        {uploading ? confirming ? 'Ждём подтверждения YouTube…' : 'Загружаем…' : result ? 'Повторить сохранение ссылки' : session.current ? 'Продолжить загрузку' : 'Загрузить приватное видео'}
+        {uploading ? confirming ? 'Ждём подтверждения YouTube…' : 'Загружаем…' : result ? 'Повторить сохранение ссылки' : session.current ? 'Продолжить загрузку' : actionLabel}
       </button>}
       {!result && (uploading || progress > 0) && <div className="youtube-upload-progress">
         <progress value={progress} max={100} aria-label="Прогресс загрузки" /><span>{progress}%</span>
@@ -153,8 +197,9 @@ export function YoutubeUpload({ initData, beatId, video, fileKey, existingLink, 
     </>}
     {error && <p className="video-error" role="alert">{error}</p>}
     {(result?.url || existingLink) && <a className="video-download" href={result?.url || existingLink} target="_blank" rel="noreferrer">Открыть видео на YouTube</a>}
+    {publishAt && <YoutubeReleaseTime publishAt={publishAt} />}
     {result && <div className="stats-notice" role="status"><div>
-      <strong>{result.saved ? 'Видео успешно загружено' : 'Видео загружено'}</strong>
+      <strong>{result.saved ? (result.publishAt ? 'Выход видео запланирован' : 'Видео успешно загружено') : 'Видео загружено'}</strong>
       <p>{result.saved ? 'Ссылка сохранена у бита. YouTube может ещё обрабатывать видео.' : 'Ссылка пока не сохранилась. Можно повторить сохранение.'}</p>
     </div></div>}
   </div>
