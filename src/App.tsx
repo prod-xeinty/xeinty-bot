@@ -7,6 +7,7 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { ArrowLeft, ArrowRight, AudioLines, Check, ChevronDown, ChevronRight, ChevronUp, CircleHelp, Clipboard, Download, ExternalLink, FileAudio2, ImagePlus, Link2, ListMusic, Music2, Ellipsis, Plus, Radio, Send, Trash2, UploadCloud, X } from 'lucide-react'
 import { AudioDock, PlayPauseIcon, useAudioPlayer } from './audio-player'
 import { joinTrackCaption, telegramCaptionLimit } from '../supabase/functions/beats/telegram-caption'
+import { BatchPreview } from './batch-preview'
 import { BatchTrackCredits } from './batch-credits'
 import { emptyBatchDraft, useBatchDraft } from './batch-draft'
 import { BeatSearch, defaultLibraryFilters, LibraryControls, matchBeats, refineLibrary } from './beat-library'
@@ -134,7 +135,8 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
   const unavailableBatchBeats = batchSelectedIds.length - batchBeats.length
   const trackCredits = batchBeats.map((beat) => batchCredits[beat.id] ?? '')
   const hasTrackCredits = trackCredits.some((credit) => Boolean(credit.trim()))
-  const lastCaptionTooLong = joinTrackCaption(trackCredits.at(-1) ?? '', batchCaption).length > telegramCaptionLimit
+  const lastBatchCaptionLength = joinTrackCaption(batchFiles.length ? '' : trackCredits.at(-1) ?? '', batchCaption).length
+  const lastCaptionTooLong = lastBatchCaptionLength > telegramCaptionLimit
   const libraryBeats = screen === 'library' ? refineLibrary(beats, libraryFilters) : []
   const publicationBeats = beats.filter((beat) => !beat.isDemo)
   const matchingPublicationBeats = matchBeats(publicationBeats, publishQuery)
@@ -855,6 +857,13 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
               <label className="field"><span>Подпись к аудио</span><textarea className="batch-caption" maxLength={1024} value={batchCaption} onBlur={(event) => rememberHashtags(event.currentTarget.value)} onChange={(event) => { const caption = event.currentTarget.value; batchDraft.update((draft) => ({ ...draft, caption })) }} placeholder="Необязательно" /></label>
               {captionTools(batchCaption, (caption) => batchDraft.update((draft) => ({ ...draft, caption })), 'batch')}
 
+              {(batchBeats.length > 0 || batchFiles.length > 0) && <BatchPreview
+                tracks={[
+                  ...batchBeats.map((beat) => ({ ...beat, credits: batchCredits[beat.id] })),
+                  ...batchFiles.map((file, index) => ({ id: "file:" + index, title: file.name })),
+                ]}
+                cover={batchIncludeCover ? batchCoverFile : null} coverCaption={batchCoverCaption}
+                caption={batchCaption} lastCaptionLength={lastBatchCaptionLength} unavailable={unavailableBatchBeats} />}
               {lastCaptionTooLong && <p className="video-error" role="alert">Сократи общую подпись или подпись к последнему треку. Вместе они должны занимать до 1024 символов.</p>}
               {cloudAvailable && batchBeats.length > 0 && !unavailableBatchBeats && batchBeats.every((beat) => beat.cloud) && batchFiles.length === 0 &&
                 <DirectTelegramPublication channels={channels} initData={webApp?.initData ?? ""} onRecovered={applyTelegramResult}
