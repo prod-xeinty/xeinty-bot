@@ -1,51 +1,24 @@
 import { useEffect, useState } from 'react'
-import { remoteFile, type TelegramPublication } from './cloud-beats'
+import type { TelegramChannel, TelegramPublication } from './cloud-beats'
 
 export type PublishMedia = { name: string; file?: File; url?: string }
 
 export function TelegramMedia({ audio, cover }: { audio: PublishMedia[]; cover?: PublishMedia }) {
-  const [prepared, setPrepared] = useState<{ sources: PublishMedia[]; files: File[] }>()
-  const [loading, setLoading] = useState(false)
-  const [message, setMessage] = useState('')
-  const sources = cover ? [...audio, cover] : audio
-  const current = prepared?.sources.length === sources.length &&
-    sources.every((source, i) => source.file === prepared.sources[i].file && source.url === prepared.sources[i].url)
-    ? prepared.files : undefined
+  const files = cover ? [...audio, cover] : audio
+  if (!files.length) return null
+  return <details className="publication-link">
+    <summary>Скачать файлы</summary>
+    <div className="video-save-actions">{files.map((source, index) => source.file
+      ? <FileDownload key={index} file={source.file} />
+      : source.url && <a key={index} className="video-download" href={downloadUrl(source.url, source.name)} download={source.name}>{source.name}</a>)}</div>
+  </details>
+}
 
-  async function prepare() {
-    setLoading(true)
-    setMessage('')
-    try {
-      const files = await Promise.all(sources.map(({ file, url, name }) => file ? file : remoteFile(url!, name)))
-      setPrepared({ sources, files })
-    } catch {
-      setMessage('Не удалось получить файлы. Попробуй ещё раз или заново открой приложение.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const audioFiles = current?.slice(0, audio.length)
-  const canShare = Boolean(audioFiles?.length && typeof navigator.share === 'function' && navigator.canShare?.({ files: audioFiles }))
-  async function share() {
-    if (!audioFiles) return
-    try {
-      await navigator.share({ files: audioFiles })
-    } catch (error) {
-      if (!(error instanceof DOMException && error.name === 'AbortError')) setMessage('Не удалось открыть меню отправки. Скачай файлы ниже.')
-    }
-  }
-
-  return <div>
-    {!current && <button className="copy-button" disabled={!audio.length || loading} onClick={prepare}>{loading ? 'Готовим файлы…' : 'Подготовить файлы для Telegram'}</button>}
-    {current && <>
-      {canShare && <button className="copy-button" onClick={share}>Поделиться аудио</button>}
-      <p className="form-hint">Выбери Telegram в меню отправки или скачай аудио и прикрепи его в канале. Вставь скопированную подпись перед отправкой.</p>
-      <div className="video-save-actions">{current.map((file, index) => <FileDownload key={index} file={file} />)}</div>
-      {cover && <p className="form-hint">Обложку можно отправить отдельным сообщением.</p>}
-    </>}
-    {message && <p className="video-error" role="status">{message}</p>}
-  </div>
+function downloadUrl(source: string, name: string) {
+  if (source.startsWith('blob:')) return source
+  const url = new URL(source)
+  url.searchParams.set('download', name)
+  return url.toString()
 }
 
 function FileDownload({ file }: { file: File }) {
@@ -101,10 +74,13 @@ export function PublicationLink({ platform, initial, onSave }: {
   </form>
 }
 
-export function DirectTelegramPublication({ publish }: {
+export function DirectTelegramPublication({ publish, channels, onManage }: {
+  channels: TelegramChannel[]
+  onManage: () => void
   publish: (channel: string) => Promise<TelegramPublication>
 }) {
   const [channel, setChannel] = useState('')
+  const selectedChannel = channels.find((item) => item.id === channel)
   const [confirm, setConfirm] = useState(false)
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<TelegramPublication>()
@@ -124,13 +100,16 @@ export function DirectTelegramPublication({ publish }: {
 
   return <form className="publication-link" onSubmit={(event) => {
     event.preventDefault()
-    if (!busy && !result) setConfirm(true)
+    if (!busy && !result && selectedChannel) setConfirm(true)
   }}>
-    <label className="field"><span>Канал Telegram</span><input required value={channel} placeholder="@имя_канала или ID −100…" disabled={busy || confirm || Boolean(result)} onChange={(event) => setChannel(event.target.value)} /></label>
-    {!result && <p className="form-hint">Добавь @xeintybot в администраторы канала с правом публиковать сообщения.</p>}
-    {!confirm && !result && <button className="copy-button" disabled={!channel.trim()}>Опубликовать через бота</button>}
+    <label className="field"><span>Канал Telegram</span><select required value={selectedChannel?.id ?? ''} disabled={busy || confirm || Boolean(result)} onChange={(event) => setChannel(event.target.value)}>
+      <option value="">Выбрать канал</option>
+      {channels.map((item) => <option key={item.id} value={item.id}>{item.title}{item.username ? ' (@' + item.username + ')' : ''}</option>)}
+    </select></label>
+    {!result && <button type="button" className="outline-button channel-manage" disabled={busy} onClick={onManage}>{channels.length ? 'Управлять каналами' : 'Подключить канал'}</button>}
+    {!confirm && !result && <button className="copy-button" disabled={!selectedChannel}>Опубликовать через бота</button>}
     {confirm && <>
-      <p className="form-hint">Отправить аудио и текущую подпись в {channel.trim()}?</p>
+      <p className="form-hint">Отправить аудио и текущую подпись в {selectedChannel?.title}?</p>
       <button type="button" className="copy-button" disabled={busy} onClick={() => void send()}>{busy ? 'Публикуем…' : 'Подтвердить публикацию'}</button>
       <button type="button" className="copy-button copy-button--subtle" disabled={busy} onClick={() => setConfirm(false)}>Отмена</button>
     </>}

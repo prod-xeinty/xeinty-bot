@@ -4,12 +4,14 @@ import { getTelegramWebApp } from './telegram'
 import { makeStaticVideo, type VideoStage } from './video'
 import { saveVideoFile } from './save-video'
 import { deleteStoredBeat, loadStoredBeats, saveBeatCover, saveBeatMetadata, saveNewBeat, type StoredBeat } from './beat-store'
-import { cloudConfigured, createCloudBeat, deleteCloudBeat, loadCloudBeats, publishCloudTelegram, remoteFile, replaceCloudCover, updateCloudBeat } from './cloud-beats'
+import { cloudConfigured, connectTelegramChannel, disconnectTelegramChannel, loadTelegramChannels, type TelegramChannel, createCloudBeat, deleteCloudBeat, loadCloudBeats, publishCloudTelegram, remoteFile, replaceCloudCover, updateCloudBeat } from './cloud-beats'
 import { canonicalKeyOptions, normalizeMusicKey } from './music-key'
 import { parseAudioName } from './filename'
 import { DirectTelegramPublication, PublicationLink, readPublicationCover, TelegramMedia, type PublishMedia } from './publication'
 
-type Screen = 'library' | 'create' | 'publish' | 'overview' | 'detail'
+import { CaptionTools, readCaptionPreferences, TelegramChannels, } from './telegram-settings'
+
+type Screen = 'library' | 'create' | 'publish' | 'channels' | 'overview' | 'detail'
 type DetailTab = 'data' | 'stats'
 type Beat = Omit<StoredBeat, 'createdAt'> & {
   createdAt?: number; cover: number; coverUrl?: string; audioUrl?: string; audioFile?: File; coverFile?: File; isDemo?: boolean; cloud?: boolean
@@ -76,6 +78,10 @@ function App() {
   const [batchSelectedIds, setBatchSelectedIds] = useState<string[]>([])
   const [batchFiles, setBatchFiles] = useState<File[]>([])
   const [batchCaption, setBatchCaption] = useState('')
+  const [batchCoverCaption, setBatchCoverCaption] = useState('')
+  const [channels, setChannels] = useState<TelegramChannel[]>([])
+  const [channelLoadError, setChannelLoadError] = useState('')
+  const [captionPreferences, setCaptionPreferences] = useState(readCaptionPreferences)
   const [batchCoverFile, setBatchCoverFile] = useState<File | null>(null)
   const [includeTelegramCover, setIncludeTelegramCover] = useState(() => localStorage.getItem('xeinty-telegram-cover') !== 'false')
   const [coverFile, setCoverFile] = useState<File | null>(null)
@@ -97,6 +103,50 @@ function App() {
   const savedAudioBeats = beats.filter((beat) => !beat.isDemo && (beat.audioFile || beat.audioUrl))
   const batchBeats = batchSelectedIds.flatMap((id) => savedAudioBeats.filter((beat) => beat.id === id))
   const cloudAvailable = cloudConfigured() && Boolean(webApp?.initData)
+
+  useEffect(() => {
+    if (!cloudAvailable || !webApp?.initData) return
+    let active = true
+    void loadTelegramChannels(webApp.initData).then((list) => {
+      if (active) setChannels(list)
+    }).catch(() => {
+      if (active) setChannelLoadError('Не удалось загрузить каналы. Открой приложение заново.')
+    })
+    return () => { active = false }
+  }, [cloudAvailable, webApp])
+
+  useEffect(() => {
+    try { localStorage.setItem('xeinty-telegram-caption-preferences', JSON.stringify(captionPreferences)) }
+    catch { /* Storage can be unavailable inside some WebViews. */ }
+  }, [captionPreferences])
+
+  function rememberHashtags(...captions: string[]) {
+    const tags = captions.join(' ').match(/#[\p{L}\p{N}_]+/gu) ?? []
+    if (!tags.length) return
+    setCaptionPreferences((previous) => {
+      const hashtags = [...new Map([...previous.hashtags].reverse().concat(tags).map((tag) => [tag.toLowerCase(), tag])).values()].reverse().slice(0, 12)
+      // Move tags from the latest caption to the front, including previously used tags.
+      const used = new Map(tags.map((tag) => [tag.toLowerCase(), tag]))
+      return { ...previous, hashtags: [...used.values(), ...hashtags.filter((tag) => !used.has(tag.toLowerCase()))].slice(0, 12) }
+    })
+  }
+
+  function captionTools(caption: string, onChange: (value: string) => void) {
+    return <CaptionTools caption={caption} onChange={onChange} preferences={captionPreferences} onPreferences={setCaptionPreferences} />
+  }
+
+  async function addChannel(address: string) {
+    if (!webApp?.initData) return
+    const channel = await connectTelegramChannel(webApp.initData, address)
+    setChannels((all) => [...all.filter((item) => item.id !== channel.id), channel].sort((a, b) => a.title.localeCompare(b.title)))
+    setChannelLoadError('')
+  }
+
+  async function removeChannel(id: string) {
+    if (!webApp?.initData) return
+    await disconnectTelegramChannel(webApp.initData, id)
+    setChannels((all) => all.filter((item) => item.id !== id))
+  }
 
   function toggleTelegramCover(enabled: boolean) {
     setIncludeTelegramCover(enabled)
@@ -203,7 +253,7 @@ function App() {
     }
   }
 
-  async function publishTelegram(channel: string, targets: Beat[], caption: string, cover?: File, useSavedCover = false) {
+  async function publishTelegram(channel: string, targets: Beat[], caption: string, cover?: File, useSavedCover = false, coverCaption = '') {
     if (!webApp?.initData) throw new Error('Открой XEINTY через Telegram.')
     if (caption.length > 1024) throw new Error('Сократи подпись до 1024 символов.')
     const beatIds = targets.map((beat) => beat.id)
@@ -218,8 +268,9 @@ function App() {
       }
     }
     const result = await publishCloudTelegram(webApp.initData, {
-      channel, beatIds, caption, useSavedCover, cover: cover ? await readPublicationCover(cover) : undefined,
+      channel, beatIds, caption, useSavedCover, coverCaption, cover: cover ? await readPublicationCover(cover) : undefined,
     })
+    rememberHashtags(caption, coverCaption)
     if (result.saved) setBeats((all) => all.map((beat) => beatIds.includes(beat.id) ? { ...beat, telegramLink: result.url } : beat))
     return result
   }
@@ -393,6 +444,7 @@ function App() {
     { id: 'library' as Screen, label: 'Биты', Icon: ListMusic },
     { id: 'create' as Screen, label: 'Создать', Icon: Plus },
     { id: 'publish' as Screen, label: 'Публикация', Icon: Send },
+    { id: 'channels' as Screen, label: 'Каналы', Icon: Radio },
     { id: 'overview' as Screen, label: 'Обзор', Icon: AudioLines },
   ]
 
@@ -431,7 +483,7 @@ function App() {
               <div className="section-intro"><h2>Для площадок</h2><p>Подстрой тексты и подготовь видео для выбранного бита.</p></div>
               <div className="platform-switch" role="tablist" aria-label="Площадка"><button role="tab" aria-selected={publicationPlatform === 'telegram'} className={publicationPlatform === 'telegram' ? 'is-active' : ''} onClick={() => setPublicationPlatform('telegram')}>Telegram</button><button role="tab" aria-selected={publicationPlatform === 'youtube'} className={publicationPlatform === 'youtube' ? 'is-active' : ''} onClick={() => setPublicationPlatform('youtube')}>YouTube</button></div>
               <div className="publication-grid">
-                <div className={`publication-card ${publicationPlatform === 'telegram' ? 'is-current' : ''}`}><div className="publication-card-head"><div className="platform-icon telegram-icon"><Send size={20} /></div><div><span>TELEGRAM</span><h3>Подпись к посту</h3></div></div><textarea aria-label="Подпись для Telegram" placeholder="Добавить подпись (необязательно)" value={selected.telegramCaption} onChange={(e) => updateBeat({ telegramCaption: e.target.value })} /><button className="copy-button" disabled={!selected.telegramCaption.trim()} onClick={() => copyText(selected.telegramCaption, 'Текст Telegram')}><Clipboard size={16} /> Скопировать текст <ArrowRight size={16} /></button><label className="batch-cover-toggle"><input type="checkbox" checked={includeTelegramCover} onChange={(event) => toggleTelegramCover(event.target.checked)} /><span>Прикладывать обложку к посту</span></label>{cloudAvailable && selected.cloud && <DirectTelegramPublication key={selected.id} publish={(channel) => publishTelegram(channel, [selected], selected.telegramCaption, undefined, includeTelegramCover)} />}
+                <div className={`publication-card ${publicationPlatform === 'telegram' ? 'is-current' : ''}`}><div className="publication-card-head"><div className="platform-icon telegram-icon"><Send size={20} /></div><div><span>TELEGRAM</span><h3>Подпись к посту</h3></div></div><textarea aria-label="Подпись для Telegram" placeholder="Добавить подпись (необязательно)" value={selected.telegramCaption} maxLength={1024} onBlur={(e) => rememberHashtags(e.currentTarget.value)} onChange={(e) => updateBeat({ telegramCaption: e.target.value })} />{captionTools(selected.telegramCaption, (telegramCaption) => updateBeat({ telegramCaption }))}<button className="copy-button" disabled={!selected.telegramCaption.trim()} onClick={() => copyText(selected.telegramCaption, 'Текст Telegram')}><Clipboard size={16} /> Скопировать текст <ArrowRight size={16} /></button><label className="batch-cover-toggle"><input type="checkbox" checked={includeTelegramCover} onChange={(event) => toggleTelegramCover(event.target.checked)} /><span>Прикладывать обложку к посту</span></label>{cloudAvailable && selected.cloud && <DirectTelegramPublication channels={channels} onManage={() => navigate('channels')} key={selected.id} publish={(channel) => publishTelegram(channel, [selected], selected.telegramCaption, undefined, includeTelegramCover)} />}
                   <TelegramMedia key={selected.id} audio={beatAudio(selected)} cover={includeTelegramCover && (selected.coverFile || selected.coverUrl) ? { name: 'Обложка', file: selected.coverFile, url: selected.coverUrl } : undefined} />
                   <PublicationLink key={selected.id + selected.telegramLink} platform="telegram" initial={selected.telegramLink} onSave={(url) => savePublicationLink([selected], 'telegramLink', url)} /></div>
                 <div className={`publication-card ${publicationPlatform === 'youtube' ? 'is-current' : ''}`}><div className="publication-card-head"><div className="platform-icon youtube-icon">▶</div><div><span>YOUTUBE</span><h3>Описание видео</h3></div></div><textarea aria-label="Описание для YouTube" value={selected.youtubeDescription} onChange={(e) => updateBeat({ youtubeDescription: e.target.value })} /><button className="copy-button" onClick={() => copyText(selected.youtubeDescription, 'Описание YouTube')}><Clipboard size={16} /> Скопировать описание <ArrowRight size={16} /></button><label className="keywords-field"><span>КЛЮЧЕВЫЕ СЛОВА</span><input aria-label="Ключевые слова YouTube" value={selected.youtubeKeywords} onChange={(e) => updateBeat({ youtubeKeywords: e.target.value })} /></label><button className="copy-button copy-button--subtle" onClick={() => copyText(selected.youtubeKeywords, 'Ключевые слова')}><Clipboard size={16} /> Скопировать ключевые слова <ArrowRight size={16} /></button>
@@ -458,10 +510,15 @@ function App() {
               {batchFiles.length > 0 && <ol className="batch-file-list">{batchFiles.map((file, index) => <li key={`${index}-${file.name}`}>{file.name}</li>)}</ol>}
               <label className="batch-cover-toggle"><input type="checkbox" checked={includeTelegramCover} onChange={(event) => toggleTelegramCover(event.target.checked)} /><span>Прикладывать обложку к посту</span></label>
               {includeTelegramCover && <label className="upload-zone"><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setBatchCoverFile(event.target.files?.[0] ?? null)} /><ImagePlus size={24} /><strong>{batchCoverFile?.name ?? 'Общая обложка'}</strong><span>Необязательно · JPG, PNG или WEBP</span></label>}
-              <label className="field"><span>ПОДПИСЬ К ПОСТУ</span><textarea className="batch-caption" value={batchCaption} onChange={(event) => setBatchCaption(event.target.value)} placeholder="Добавить подпись (необязательно)" /></label>
+              {includeTelegramCover && batchCoverFile && <>
+                <label className="field"><span>Подпись к обложке</span><textarea className="batch-caption" maxLength={1024} value={batchCoverCaption} onBlur={(event) => rememberHashtags(event.currentTarget.value)} onChange={(event) => setBatchCoverCaption(event.target.value)} placeholder="Необязательно" /></label>
+                {captionTools(batchCoverCaption, setBatchCoverCaption)}
+              </>}
+              <label className="field"><span>Подпись к аудио</span><textarea className="batch-caption" maxLength={1024} value={batchCaption} onBlur={(event) => rememberHashtags(event.currentTarget.value)} onChange={(event) => setBatchCaption(event.target.value)} placeholder="Необязательно" /></label>
+              {captionTools(batchCaption, setBatchCaption)}
               <div className="batch-actions"><button className="copy-button" disabled={!batchCaption.trim()} onClick={() => copyText(batchCaption, 'Подпись пачки')}><Clipboard size={16} /> Скопировать подпись</button></div>
               {cloudAvailable && batchBeats.length > 0 && batchBeats.every((beat) => beat.cloud) && batchFiles.length === 0 &&
-                <DirectTelegramPublication key={batchBeats.map((beat) => beat.id).join(',')} publish={(channel) => publishTelegram(channel, batchBeats, batchCaption, includeTelegramCover ? batchCoverFile ?? undefined : undefined)} />}
+                <DirectTelegramPublication channels={channels} onManage={() => navigate('channels')} key={batchBeats.map((beat) => beat.id).join(',')} publish={(channel) => publishTelegram(channel, batchBeats, batchCaption, includeTelegramCover ? batchCoverFile ?? undefined : undefined, false, includeTelegramCover && batchCoverFile ? batchCoverCaption : '')} />}
               {cloudAvailable && (batchFiles.length > 0 || batchBeats.some((beat) => !beat.cloud)) &&
                 <p className="form-hint">Для прямой публикации выбери MP3 из облачной библиотеки. Файлы с устройства можно отправить вручную ниже.</p>}
               <TelegramMedia audio={[...batchBeats.flatMap(beatAudio), ...batchFiles.map((file) => ({ name: file.name, file }))]} cover={includeTelegramCover && batchCoverFile ? { name: batchCoverFile.name, file: batchCoverFile } : undefined} />
@@ -471,6 +528,10 @@ function App() {
               {batchBeats.length > 0 && <p className="form-hint">Ссылка сохранится у всех выбранных битов из библиотеки.</p>}
             </div>
             </>}
+          </>}
+          {screen === 'channels' && <>
+            <div className="page-heading"><div><h1>Каналы</h1><p>Куда XEINTY может публиковать биты.</p></div></div>
+            <TelegramChannels available={cloudAvailable} channels={channels} loadError={channelLoadError} onConnect={addChannel} onDisconnect={removeChannel} />
           </>}
           {screen === 'overview' && <>
             <div className="page-heading"><div><h1>Обзор</h1><p>Статистика всех опубликованных битов.</p></div></div><div className="overview-hero"><div className="overview-symbol"><AudioLines size={28} /></div><h2>Статистика появится позже</h2><p>Просмотры и динамика битов станут доступны после подключения Telegram и YouTube. Сейчас источники не подключены.</p><button className="outline-button" onClick={() => navigate('library')}>Вернуться к битам <ArrowRight size={18} /></button></div><div className="future-grid"><div><Radio size={22} /><strong>Telegram</strong><span>Статистика постов канала</span></div><div><Disc3 size={22} /><strong>YouTube</strong><span>Просмотры и публикации</span></div></div>

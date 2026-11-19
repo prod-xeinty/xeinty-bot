@@ -375,3 +375,16 @@ input, textarea { caret-color: #fff; }
 
 .publication-link { margin-top: 16px; padding-top: 14px; border-top: 1px solid #ffffff23; }
 .video-save-actions a { max-width: 100%; overflow-wrap: anywhere; }
+
+.field select { width: 100%; min-height: 44px; padding: 0 12px; border: 1px solid #ffffff30; border-radius: 9px; color: #f3f3f2; background: #111112; font: inherit; }
+.channel-manage { margin-top: 10px; }
+.telegram-channel-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.telegram-channel-list li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px; border: 1px solid #ffffff25; border-radius: 10px; }
+.telegram-channel-list li > div { display: grid; gap: 3px; min-width: 0; overflow-wrap: anywhere; }
+.telegram-channel-list small { color: #aaa; }
+.caption-tools { display: grid; gap: 10px; margin-top: 6px; }
+.caption-tools-actions, .caption-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.caption-tags > span { width: 100%; color: #aaa; font-size: 12px; }
+.caption-tags button:disabled { opacity: .5; }
+.caption-template textarea { min-height: 82px; padding: 12px; border: 1px solid #ffffff30; border-radius: 9px; color: #f3f3f2; background: #111112; resize: vertical; }
+@media (max-width: 600px) { .bottom-nav { grid-template-columns: repeat(5, minmax(0, 1fr)); } }

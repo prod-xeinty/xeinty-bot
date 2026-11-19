@@ -1,4 +1,4 @@
-type Chat = { id: number; type: string; username?: string }
+type Chat = { id: number; type: string; title?: string; username?: string }
 type Member = { status: string; can_post_messages?: boolean }
 type Message = { message_id: number }
 
@@ -33,7 +33,14 @@ async function api<T>(method: string, payload: Record<string, unknown> | FormDat
 export async function channelForPublisher(address: string, userId: number): Promise<Chat> {
   const chat = await api<Chat>('getChat', { chat_id: address })
   if (chat.type !== 'channel') throw new TelegramPublishError('Укажи канал Telegram.')
-  const member = await api<Member>('getChatMember', { chat_id: chat.id, user_id: userId })
+  const bot = await api<{ id: number }>('getMe', {})
+  const [member, botMember] = await Promise.all([
+    api<Member>('getChatMember', { chat_id: chat.id, user_id: userId }),
+    api<Member>('getChatMember', { chat_id: chat.id, user_id: bot.id }),
+  ])
+  if (botMember.status !== 'administrator' || !botMember.can_post_messages) {
+    throw new TelegramPublishError('Дай боту право публиковать сообщения в канале.')
+  }
   if (member.status !== 'creator' && !(member.status === 'administrator' && member.can_post_messages)) {
     throw new TelegramPublishError('У твоего аккаунта нет права публиковать в этом канале.')
   }
@@ -55,14 +62,15 @@ export async function postAudio(chat: Chat, tracks: { audio: string }[], caption
   return `https://t.me/${path}/${first.message_id}`
 }
 
-export async function postCover(chat: Chat, cover: string | File) {
+export async function postCover(chat: Chat, cover: string | File, caption: string) {
   if (typeof cover === 'string') {
-    await api('sendPhoto', { chat_id: chat.id, photo: cover })
+    await api('sendPhoto', { chat_id: chat.id, photo: cover, caption })
     return
   }
   const form = new FormData()
   form.set('chat_id', String(chat.id))
   form.set('photo', cover)
+  form.set('caption', caption)
   await api('sendPhoto', form)
 }
 

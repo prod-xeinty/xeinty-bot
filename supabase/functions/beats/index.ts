@@ -154,14 +154,43 @@ Deno.serve(async (request) => {
       return reply({ beats }, 200, origin)
     }
 
+    if (action === 'list-telegram-channels') {
+      const { data, error } = await db.from('telegram_channels').select('chat_id,title,username')
+        .eq('telegram_user_id', userId).order('title')
+      if (error) throw error
+      return reply({ channels: data.map((chat) => ({ id: String(chat.chat_id), title: chat.title, username: chat.username })) }, 200, origin)
+    }
+
+    if (action === 'connect-telegram-channel' || action === 'disconnect-telegram-channel') {
+      const address = text(body.channel, 40)?.trim()
+      if (!address || !/^(@[a-z0-9_]{5,32}|-100[0-9]{5,16})$/i.test(address)) {
+        return reply({ error: 'Укажи @имя канала или его ID, начинающийся с -100' }, 400, origin)
+      }
+      if (action === 'disconnect-telegram-channel') {
+        if (!address.startsWith('-100')) return reply({ error: 'Нужен ID канала' }, 400, origin)
+        const { error } = await db.from('telegram_channels').delete()
+          .eq('telegram_user_id', userId).eq('chat_id', address)
+        if (error) throw error
+        return reply({ ok: true }, 200, origin)
+      }
+      const chat = await channelForPublisher(address, userId)
+      const { error } = await db.from('telegram_channels').upsert({
+        telegram_user_id: userId, chat_id: chat.id, title: chat.title || chat.username || String(chat.id),
+        username: chat.username ?? null,
+      })
+      if (error) throw error
+      return reply({ channel: { id: String(chat.id), title: chat.title || chat.username || String(chat.id), username: chat.username ?? null } }, 200, origin)
+    }
+
     if (action === 'publish-telegram') {
       const ids: unknown = body.beatIds
       const caption = text(body.caption, 1024)
+      const coverCaption = text(body.coverCaption ?? '', 1024)
       const channel = text(body.channel, 40)?.trim()
       if (!Array.isArray(ids) || ids.length < 1 || ids.length > 10 || new Set(ids).size !== ids.length ||
           !ids.every((id) => typeof id === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id)) ||
-          caption === null || !channel || !/^(@[a-z0-9_]{5,32}|-100[0-9]{5,16})$/i.test(channel)) {
-        return reply({ error: 'Нужны @имя или ID канала, до 10 битов и подпись до 1024 символов' }, 400, origin)
+          caption === null || coverCaption === null || !channel || !/^-100[0-9]{5,16}$/.test(channel)) {
+        return reply({ error: 'Выбери канал и до 10 битов. Каждая подпись должна быть до 1024 символов.' }, 400, origin)
       }
       const { data, error } = await db.from('beats').select('id,audio_name,audio_path,cover_path')
         .eq('telegram_user_id', userId).in('id', ids)
@@ -170,6 +199,10 @@ Deno.serve(async (request) => {
       if (ordered.some((beat) => !beat?.audio_path)) {
         return reply({ error: 'Для публикации нужны твои биты с MP3 в облаке' }, 404, origin)
       }
+      const connected = await db.from('telegram_channels').select('chat_id')
+        .eq('telegram_user_id', userId).eq('chat_id', channel).maybeSingle()
+      if (connected.error) throw connected.error
+      if (!connected.data) return reply({ error: 'Подключи канал во вкладке «Каналы»' }, 403, origin)
       const chat = await channelForPublisher(channel, userId)
       const sign = async (path: string, download?: string) => {
         const { data, error } = await db.storage.from(bucket).createSignedUrl(path, 600, download ? { download } : undefined)
@@ -194,7 +227,7 @@ Deno.serve(async (request) => {
         warnings.push('Ссылка не сохранилась. Скопируй её из результата.')
       }
       if (cover) {
-        try { await postCover(chat, cover) }
+        try { await postCover(chat, cover, coverCaption) }
         catch { warnings.push('Аудио опубликовано. Отправь обложку отдельно вручную.') }
       }
       return reply({ url, saved: !warnings.some((warning) => warning.startsWith('Ссылка')), warnings }, 200, origin)
