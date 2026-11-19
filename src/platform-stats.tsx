@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
+import { ChevronRight, Music2 } from 'lucide-react'
 import { loadPlatformStats, type PlatformStats, type PostMetrics, type StatsPlatform } from './cloud-beats'
 
 const numberFormat = new Intl.NumberFormat('ru-RU')
@@ -28,7 +29,7 @@ export function usePlatformStats(platform: StatsPlatform, initData?: string, act
 }
 
 type StatsState = ReturnType<typeof usePlatformStats>
-type LinkedBeat = { id: string; title: string; youtubeLink: string; telegramLink: string; cloud?: boolean }
+type LinkedBeat = { id: string; title: string; youtubeLink: string; telegramLink: string; cloud?: boolean; coverUrl?: string }
 const platformNames = { youtube: 'YouTube', telegram: 'Telegram' }
 const metricLabels = { views: 'Просмотры', likes: 'Лайки', reactions: 'Реакции', comments: 'Комментарии', forwards: 'Пересылки', saves: 'Сохранения' }
 const platformMetrics: Record<StatsPlatform, (keyof PostMetrics)[]> = {
@@ -78,8 +79,9 @@ export function StatsOverview({ platform, setPlatform, beats, state, openBeat, o
   const rows = linked.map((beat) => ({ ...beat, views: readMetrics(result, beat, platform)?.views ?? null }))
     .sort((a, b) => (b.views ?? -1) - (a.views ?? -1))
   return <section className="overview-hero youtube-stats" aria-label="Сводка по площадкам">
-    <div className="stats-platform-switch" role="group" aria-label="Площадка">
-      {(['youtube', 'telegram'] as const).map((item) => <button key={item} type="button" aria-pressed={platform === item}
+    <div className="publish-mode stats-platform-switch" role="group" aria-label="Площадка"
+      style={{ '--tab-i': platform === 'youtube' ? 0 : 1 } as CSSProperties}>
+      {(['youtube', 'telegram'] as const).map((item) => <button key={item} type="button" className={platform === item ? 'is-active' : undefined} aria-pressed={platform === item}
         onClick={() => setPlatform(item)}>{platformNames[item]}</button>)}
     </div>
     {linked.length === 0 ? <>
@@ -97,8 +99,12 @@ export function StatsOverview({ platform, setPlatform, beats, state, openBeat, o
       <div className="stats-list-heading"><h2>По битам</h2><span>Просмотры</span></div>
       <ul className="youtube-stats-list" aria-label="Просмотры по битам">{rows.map((beat) => <li key={beat.id}>
         <button type="button" onClick={() => openBeat(beat.id)}>
-          <span>{beat.title}</span>
+          <span className="stats-row-cover" aria-hidden="true">
+            {beat.coverUrl ? <img src={beat.coverUrl} loading="lazy" alt="" /> : <Music2 size={17} />}
+          </span>
+          <span className="stats-row-title">{beat.title}</span>
           <strong>{beat.views === null ? '—' : numberFormat.format(beat.views)}</strong>
+          <ChevronRight className="stats-row-arrow" size={16} aria-hidden="true" />
         </button>
       </li>)}</ul>
     </>}
