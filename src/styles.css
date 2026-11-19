@@ -758,8 +758,9 @@ input, textarea { caret-color: #fff; }
 .publish-beat-search { max-width: 440px; margin-bottom: 10px; }
 .batch-selection { display: grid; gap: 8px; font-size: 14px; }
 .batch-selection-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
-.batch-selection-list li { display: flex; align-items: center; justify-content: space-between; gap: 4px; min-width: 0; padding: 3px 4px 3px 10px; border: 1px solid #ffffff20; border-radius: 11px; background: #ffffff08; }
-.batch-selection-list li > span { min-width: 0; overflow-wrap: anywhere; }
+.batch-selection-list li { display: grid; gap: 4px; min-width: 0; padding: 3px 4px 3px 10px; border: 1px solid #ffffff20; border-radius: 11px; background: #ffffff08; }
+.batch-selection-row { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+.batch-selection-row > span { min-width: 0; overflow-wrap: anywhere; }
 .batch-selection-actions { display: flex; flex: none; }
 .batch-selection-actions button:disabled { opacity: .3; cursor: default; }
 @media (max-width: 620px) { .beat-search input { font-size: 16px; } }
@@ -774,3 +775,16 @@ input, textarea { caret-color: #fff; }
 .caption-preview p { margin: 0; color: #f4f4f2; font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .caption-preview .caption-preview-link { text-decoration: underline; text-underline-offset: 3px; }
 .caption-tools > .form-hint { margin: 0; }
+
+.batch-draft-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 16px; }
+.batch-draft-bar > p { flex: 1 1 190px; margin: 0; }
+.batch-track-credits { min-width: 0; margin-bottom: 3px; }
+.batch-track-credits summary { width: fit-content; padding: 7px 3px; color: #d2d2d2; font-size: 12px; cursor: pointer; }
+.batch-track-credits[open] { margin-right: 6px; padding-bottom: 7px; }
+.batch-track-credits .field { margin: 5px 0 0; min-width: 0; }
+.batch-file-list li { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.batch-file-list li span { overflow-wrap: anywhere; min-width: 0; }
+.batch-file-list button { flex: none; min-height: 36px; padding: 0 8px; }
+.batch-remove-cover { justify-self: start; }
+
+.batch-credit-link .outline-button { margin-top: 8px; }

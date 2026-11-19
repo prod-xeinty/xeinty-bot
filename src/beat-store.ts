@@ -105,3 +105,37 @@ export async function deleteStoredBeat(id: string): Promise<void> {
   transaction.objectStore('files').delete(id)
   await finished
 }
+
+export type TelegramBatchDraft = {
+  selectedIds: string[]
+  files: File[]
+  credits: Record<string, string>
+  caption: string
+  coverCaption: string
+  cover: File | null
+  includeCover?: boolean
+}
+
+async function batchDraftDatabase() {
+  const open = indexedDB.open('xeinty-batch-drafts', 1)
+  open.onupgradeneeded = () => open.result.createObjectStore('drafts')
+  return request(open)
+}
+
+export async function loadBatchDraft(scope: string): Promise<TelegramBatchDraft | undefined> {
+  const db = await batchDraftDatabase()
+  try {
+    return await request(db.transaction('drafts').objectStore('drafts').get(scope))
+  } finally { db.close() }
+}
+
+export async function saveBatchDraft(scope: string, draft: TelegramBatchDraft | null) {
+  const db = await batchDraftDatabase()
+  try {
+    const transaction = db.transaction('drafts', 'readwrite')
+    const done = completed(transaction)
+    if (draft) transaction.objectStore('drafts').put(draft, scope)
+    else transaction.objectStore('drafts').delete(scope)
+    await done
+  } finally { db.close() }
+}

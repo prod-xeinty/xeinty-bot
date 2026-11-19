@@ -7,7 +7,9 @@ function readAttemptId() {
   try { return sessionStorage.getItem(telegramAttemptKey) ?? '' } catch { return '' }
 }
 
-export function DirectTelegramPublication({ publish, channels, publishedCount, initData, onRecovered }: {
+export function DirectTelegramPublication({ publish, channels, publishedCount, initData, onRecovered, hasTrackCredits = false, blocked = false }: {
+  hasTrackCredits?: boolean
+  blocked?: boolean
   channels: TelegramChannel[]
   publishedCount: number
   initData: string
@@ -19,6 +21,7 @@ export function DirectTelegramPublication({ publish, channels, publishedCount, i
   const [confirm, setConfirm] = useState<false | 'first' | 'repeat'>(false)
   const [busy, setBusy] = useState(false)
   const running = useRef(false)
+  const [trackCreditsSupported, setTrackCreditsSupported] = useState(false)
   const [checking, setChecking] = useState(true)
   const [attempt, setAttempt] = useState<TelegramAttempt | null>(null)
   const [pendingId, setPendingId] = useState(readAttemptId)
@@ -34,8 +37,8 @@ export function DirectTelegramPublication({ publish, channels, publishedCount, i
 
   useEffect(() => {
     let active = true
-    void activeTelegramPublication(initData).then(({ attempt }) => {
-      if (active) setAttempt(attempt)
+    void activeTelegramPublication(initData).then(({ attempt, trackCreditsSupported }) => {
+      if (active) { setAttempt(attempt); setTrackCreditsSupported(trackCreditsSupported === true) }
     }).catch(() => {}).finally(() => { if (active) setChecking(false) })
     return () => { active = false }
   }, [initData])
@@ -64,7 +67,7 @@ export function DirectTelegramPublication({ publish, channels, publishedCount, i
   }
 
   function send() {
-    if (!confirm || !selectedChannel) return
+    if (!confirm || !selectedChannel || creditsUnavailable || blocked) return
     const id = crypto.randomUUID()
     void run(async () => {
       remember(id)
@@ -94,6 +97,7 @@ export function DirectTelegramPublication({ publish, channels, publishedCount, i
     })
   }
 
+  const creditsUnavailable = hasTrackCredits && !trackCreditsSupported
   const pending = Boolean(attempt || pendingId)
   const uncertain = attempt?.stage === 'cover_sending' || attempt?.stage === 'audio_sending'
   const channelTitle = channels.find((item) => item.id === attempt?.channel)?.title
@@ -103,7 +107,7 @@ export function DirectTelegramPublication({ publish, channels, publishedCount, i
 
   return <form className="publication-link" onSubmit={(event) => {
     event.preventDefault()
-    if (!busy && !checking && !pending && !confirm && selectedChannel) setConfirm(publishedCount || result ? 'repeat' : 'first')
+    if (!busy && !checking && !pending && !confirm && selectedChannel && !creditsUnavailable && !blocked) setConfirm(publishedCount || result ? 'repeat' : 'first')
   }}>
     {checking && <p className="form-hint" role="status">Проверяем незавершённые отправки…</p>}
     {!checking && (pending ? <>
@@ -127,10 +131,11 @@ export function DirectTelegramPublication({ publish, channels, publishedCount, i
         options={channels.map((item) => ({ value: item.id, label: item.title + (item.username ? ' (@' + item.username + ')' : '') }))} />
       {!result && channels.length === 0 && <p className="form-hint">Сначала подключи канал во вкладке «Каналы».</p>}
       {!confirm && (publishedCount > 0 || result) && <p className="form-hint">Публикации уже есть в истории.</p>}
-      {!confirm && <button className="copy-button" disabled={!selectedChannel || busy}>{publishedCount || result ? 'Опубликовать заново' : 'Опубликовать через бота'}</button>}
+      {creditsUnavailable && <p className="form-hint" role="status">Кредиты сохранены в черновике. Сервер пока не поддерживает отправку подписей к отдельным аудио.</p>}
+      {!confirm && <button className="copy-button" disabled={!selectedChannel || busy || creditsUnavailable || blocked}>{publishedCount || result ? 'Опубликовать заново' : 'Опубликовать через бота'}</button>}
       {confirm && <>
         <p className="form-hint">{confirm === 'repeat' ? 'Отправить новый пост с выбранными битами' : 'Отправить аудио и текущую подпись'} в {selectedChannel?.title}?</p>
-        <button type="button" className="copy-button" disabled={busy} onClick={send}>{confirm === 'repeat' ? 'Подтвердить повторную публикацию' : 'Подтвердить публикацию'}</button>
+        <button type="button" className="copy-button" disabled={busy || blocked || creditsUnavailable} onClick={send}>{confirm === 'repeat' ? 'Подтвердить повторную публикацию' : 'Подтвердить публикацию'}</button>
         <button type="button" className="copy-button copy-button--subtle" disabled={busy} onClick={() => setConfirm(false)}>Отмена</button>
       </>}
     </>)}

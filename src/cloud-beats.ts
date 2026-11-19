@@ -88,7 +88,7 @@ export type TelegramAttempt = { id: string; channel: string; beatIds: string[]; 
   stage: 'cover_ready' | 'cover_sending' | 'audio_ready' | 'audio_sending' | 'audio_sent' | 'done' }
 
 export function activeTelegramPublication(initData: string) {
-  return call<{ attempt: TelegramAttempt | null }>(initData, 'telegram-publication-active')
+  return call<{ attempt: TelegramAttempt | null; trackCreditsSupported?: boolean }>(initData, 'telegram-publication-active')
 }
 
 export function resumeTelegramPublication(initData: string, attemptId: string) {
@@ -102,6 +102,7 @@ export function resetTelegramPublication(initData: string, attemptId: string) {
 export async function publishCloudTelegram(initData: string, payload: {
   channel: string
   beatIds: string[]
+  trackCredits?: string[]
   attemptId: string
   caption: string
   useSavedCover?: boolean
