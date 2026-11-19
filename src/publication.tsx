@@ -1,37 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { TelegramChannel, TelegramPublication } from './cloud-beats'
 
-export type PublishMedia = { name: string; file?: File; url?: string }
-
-export function TelegramMedia({ audio, cover }: { audio: PublishMedia[]; cover?: PublishMedia }) {
-  const files = cover ? [...audio, cover] : audio
-  if (!files.length) return null
-  return <details className="publication-link">
-    <summary>Скачать файлы</summary>
-    <div className="video-save-actions">{files.map((source, index) => source.file
-      ? <FileDownload key={index} file={source.file} />
-      : source.url && <a key={index} className="video-download" href={downloadUrl(source.url, source.name)} download={source.name}>{source.name}</a>)}</div>
-  </details>
-}
-
-function downloadUrl(source: string, name: string) {
-  if (source.startsWith('blob:')) return source
-  const url = new URL(source)
-  url.searchParams.set('download', name)
-  return url.toString()
-}
-
-function FileDownload({ file }: { file: File }) {
-  const [download, setDownload] = useState<{ file: File; url: string }>()
-  useEffect(() => {
-    const url = URL.createObjectURL(file)
-    setDownload({ file, url })
-    return () => URL.revokeObjectURL(url)
-  }, [file])
-  if (download?.file !== file) return null
-  return <a className="video-download" href={download.url} download={file.name}>{file.name}</a>
-}
-
 export function PublicationLink({ platform, initial, onSave }: {
   platform: 'telegram' | 'youtube'
   initial: string
@@ -74,9 +43,8 @@ export function PublicationLink({ platform, initial, onSave }: {
   </form>
 }
 
-export function DirectTelegramPublication({ publish, channels, onManage }: {
+export function DirectTelegramPublication({ publish, channels }: {
   channels: TelegramChannel[]
-  onManage: () => void
   publish: (channel: string) => Promise<TelegramPublication>
 }) {
   const [channel, setChannel] = useState('')
@@ -106,7 +74,7 @@ export function DirectTelegramPublication({ publish, channels, onManage }: {
       <option value="">Выбрать канал</option>
       {channels.map((item) => <option key={item.id} value={item.id}>{item.title}{item.username ? ' (@' + item.username + ')' : ''}</option>)}
     </select></label>
-    {!result && <button type="button" className="outline-button channel-manage" disabled={busy} onClick={onManage}>{channels.length ? 'Управлять каналами' : 'Подключить канал'}</button>}
+    {!result && channels.length === 0 && <p className="form-hint">Сначала подключи канал во вкладке «Каналы».</p>}
     {!confirm && !result && <button className="copy-button" disabled={!selectedChannel}>Опубликовать через бота</button>}
     {confirm && <>
       <p className="form-hint">Отправить аудио и текущую подпись в {selectedChannel?.title}?</p>
@@ -130,4 +98,27 @@ export function readPublicationCover(file: File): Promise<string> {
     reader.onerror = () => reject(new Error('Не удалось прочитать обложку.'))
     reader.readAsDataURL(file)
   })
+}
+
+export function OwnYoutubeVideo() {
+  const [file, setFile] = useState<File>()
+  const [url, setUrl] = useState('')
+  useEffect(() => {
+    if (!file) { setUrl(''); return }
+    const objectUrl = URL.createObjectURL(file)
+    setUrl(objectUrl)
+    return () => URL.revokeObjectURL(objectUrl)
+  }, [file])
+
+  return <div className="video-result">
+    <label className="upload-zone">
+      <input type="file" accept="video/*,.mp4,.mov,.webm,.mkv" onChange={(event) => setFile(event.target.files?.[0])} />
+      <strong>{file?.name || 'Выбрать видео с устройства'}</strong>
+    </label>
+    {file && url && <>
+      <video src={url} controls playsInline preload="metadata" aria-label="Предпросмотр своего видео" />
+      <a className="video-download" href="https://studio.youtube.com/" target="_blank" rel="noreferrer">Открыть YouTube Studio</a>
+      <p>Выбери этот же файл при загрузке через Studio.</p>
+    </>}
+  </div>
 }
