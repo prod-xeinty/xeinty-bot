@@ -87,7 +87,24 @@ export async function publishCloudTelegram(initData: string, payload: {
   beatIds: string[]
   caption: string
   useSavedCover?: boolean
+  coverCaption?: string
   cover?: string
 }): Promise<TelegramPublication> {
   return call(initData, 'publish-telegram', payload)
+}
+
+export type TelegramChannel = { id: string; title: string; username: string | null }
+
+export async function loadTelegramChannels(initData: string): Promise<TelegramChannel[]> {
+  const result = await call<{ channels: TelegramChannel[] }>(initData, 'list-telegram-channels')
+  return result.channels
+}
+
+export async function connectTelegramChannel(initData: string, channel: string): Promise<TelegramChannel> {
+  const result = await call<{ channel: TelegramChannel }>(initData, 'connect-telegram-channel', { channel })
+  return result.channel
+}
+
+export async function disconnectTelegramChannel(initData: string, channel: string): Promise<void> {
+  await call(initData, 'disconnect-telegram-channel', { channel })
 }
