@@ -163,6 +163,15 @@ Deno.serve(async (request) => {
       return reply({ beats }, 200, origin)
     }
 
+    if (action === 'telegram-stats') {
+      try {
+        const { telegramStats } = await import('./telegram-stats.ts')
+        return reply(await telegramStats(db, userId), 200, origin)
+      } catch {
+        return reply({ error: 'Не удалось получить статистику Telegram. Попробуй обновить позже.' }, 502, origin)
+      }
+    }
+
     if (action === 'telegram-channel-profile') {
       if (typeof body.channel !== 'string' || !/^-100[0-9]{5,16}$/.test(body.channel)) {
         return reply({ error: 'Некорректный канал' }, 400, origin)

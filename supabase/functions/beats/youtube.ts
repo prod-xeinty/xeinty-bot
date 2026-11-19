@@ -126,12 +126,12 @@ async function youtubeStats(db: SupabaseClient, userId: number, cfg: NonNullable
     videoId: linkedVideoId(beat.youtube_link),
   }))
   const ids = [...new Set(rows.flatMap((row) => row.videoId ? [row.videoId] : []))]
-  const views = new Map<string, number>()
+  const metrics = new Map<string, { views: number | null; likes: number | null; comments: number | null }>()
   if (ids.length) {
     const access = await accessToken(db, userId, cfg)
     const batches = Array.from({ length: Math.ceil(ids.length / 50) }, (_, index) => ids.slice(index * 50, index * 50 + 50))
     await Promise.all(batches.map(async (batch) => {
-      const params = new URLSearchParams({ part: 'statistics', id: batch.join(','), fields: 'items(id,statistics(viewCount))' })
+      const params = new URLSearchParams({ part: 'statistics', id: batch.join(','), fields: 'items(id,statistics(viewCount,likeCount,commentCount))' })
       const response = await fetch('https://www.googleapis.com/youtube/v3/videos?' + params, {
         headers: { Authorization: 'Bearer ' + access }, signal: AbortSignal.timeout(10_000),
       })
@@ -142,17 +142,23 @@ async function youtubeStats(db: SupabaseClient, userId: number, cfg: NonNullable
         if (response.status === 403 && insufficient) throw new YoutubeError('Обнови доступ к YouTube во вкладке «Каналы».', 403)
         throw new YoutubeError('Не удалось получить просмотры с YouTube. Попробуй обновить позже.', 502)
       }
-      const parsed: { items?: { id: string; statistics?: { viewCount?: string } }[] } = await response.json()
+      const parsed: { items?: { id: string; statistics?: { viewCount?: string; likeCount?: string; commentCount?: string } }[] } = await response.json()
       for (const video of parsed.items ?? []) {
-        const count = video.statistics?.viewCount
-        if (count !== undefined && /^\d+$/.test(count) && Number.isSafeInteger(Number(count))) views.set(video.id, Number(count))
+        const count = (value?: string) => value !== undefined && /^\d+$/.test(value) && Number.isSafeInteger(Number(value)) ? Number(value) : null
+        metrics.set(video.id, { views: count(video.statistics?.viewCount), likes: count(video.statistics?.likeCount), comments: count(video.statistics?.commentCount) })
       }
     }))
   }
+  const values = [...metrics.values()]
+  const sum = (key: keyof (typeof values)[number]) => {
+    const counts = values.flatMap((entry) => entry[key] === null ? [] : [entry[key]])
+    return counts.length ? counts.reduce((total, count) => total + count, 0) : null
+  }
   return { data: {
-    entries: rows.map(({ beatId, link, videoId }) => ({ beatId, link, views: videoId ? views.get(videoId) ?? null : null })),
-    totalViews: [...views.values()].reduce((sum, count) => sum + count, 0),
-    videosWithViews: views.size,
+    entries: rows.map(({ beatId, link, videoId }) => ({ beatId, link, views: null, ...metrics.get(videoId ?? '') })),
+    totalViews: sum('views') ?? 0,
+    totals: { views: sum('views'), likes: sum('likes'), comments: sum('comments') },
+    videosWithViews: values.filter((entry) => entry.views !== null).length,
     linkedVideos: ids.length,
     fetchedAt: new Date().toISOString(),
   } }
