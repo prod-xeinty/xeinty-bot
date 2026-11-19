@@ -1,3 +1,4 @@
+import { Dropdown } from './choice-menu'
 import { useState, type FormEvent } from 'react'
 import type { TelegramChannel } from './cloud-beats'
 
@@ -80,13 +81,10 @@ export function CaptionTools({ caption, onChange, preferences, youtube = false }
   }
 
   return <div className="caption-tools">
-    {preferences.templates.length ? <label className="field"><span>Шаблон</span><select value="" onChange={(event) => {
-      const template = preferences.templates.find((item) => item.id === event.target.value)
+    {preferences.templates.length ? <Dropdown label="Шаблон" placeholder="Выбрать шаблон" value="" onChange={(value) => {
+      const template = preferences.templates.find((item) => item.id === value)
       if (template) onChange(templateText(template))
-    }}>
-      <option value="">Выбрать шаблон</option>
-      {preferences.templates.map((template) => <option key={template.id} value={template.id} disabled={templateText(template).length > limit}>{template.name}</option>)}
-    </select></label> : <p className="form-hint">Шаблоны можно создать в разделе «Ещё».</p>}
+    }} options={preferences.templates.map((template) => ({ value: template.id, label: template.name, disabled: templateText(template).length > limit }))} /> : <p className="form-hint">Шаблоны можно создать в разделе «Ещё».</p>}
     {!youtube && preferences.hashtags.length > 0 && <div className="caption-tags" aria-label="Недавние хештеги">
       <span>Недавние хештеги</span>
       {preferences.hashtags.map((tag) => <button type="button" key={tag} className="outline-button"
