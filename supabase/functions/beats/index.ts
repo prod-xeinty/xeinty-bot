@@ -216,7 +216,19 @@ Deno.serve(async (request) => {
       const tracks = await Promise.all(ordered.map(async (beat) => ({
         audio: await sign(beat!.audio_path, beat!.audio_name || 'beat.mp3'),
       })))
-      const url = await postAudio(chat, tracks, caption)
+      // Only the batch composer supplies its own cover file.
+      const batchCover = cover instanceof File ? cover : undefined
+      if (batchCover) await postCover(chat, batchCover, coverCaption)
+
+      let url: string
+      try {
+        url = await postAudio(chat, tracks, caption)
+      } catch (error) {
+        if (batchCover) {
+          throw new TelegramPublishError('Обложка отправлена. Не удалось подтвердить отправку аудио. Проверь канал перед повторной публикацией.')
+        }
+        throw error
+      }
       const warnings: string[] = []
       try {
         const { error: saveError } = await db.from('beats').update({
@@ -226,7 +238,7 @@ Deno.serve(async (request) => {
       } catch {
         warnings.push('Ссылка не сохранилась. Скопируй её из результата.')
       }
-      if (cover) {
+      if (cover && !batchCover) {
         try { await postCover(chat, cover, coverCaption) }
         catch { warnings.push('Аудио опубликовано. Отправь обложку отдельно вручную.') }
       }
