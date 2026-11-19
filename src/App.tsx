@@ -42,9 +42,9 @@ function projectCount(count: number) {
   return `${count} ${form === 'one' ? 'проект' : form === 'few' ? 'проекта' : 'проектов'}`
 }
 
-function Waveform({ light = false, compact = false }: { light?: boolean; compact?: boolean }) {
-  const heights = compact ? waveHeights.filter((_, index) => index % 2 === 0) : waveHeights
-  return <div className={`waveform ${light ? 'waveform--light' : ''} ${compact ? 'waveform--compact' : ''}`} aria-hidden="true">{heights.map((height, index) => <i key={index} style={{ height: compact ? Math.max(7, height * .55) : height }} />)}</div>
+function Waveform() {
+  const heights = waveHeights.filter((_, index) => index % 2 === 0)
+  return <div className="waveform waveform--compact" aria-hidden="true">{heights.map((height, index) => <i key={index} style={{ height: Math.max(7, height * .55) }} />)}</div>
 }
 
 function KeyPicker({ value, onChange, onCommit, label = 'Тональность' }: { value: string; onChange: (value: string) => void; onCommit?: (value: string) => void; label?: string }) {
@@ -198,12 +198,13 @@ function App() {
   useEffect(() => {
     const shell = shellRef.current
     if (!shell || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
-    const glassSelector = '.form-panel, .data-card, .publication-card, .links-panel, .tools-section, .list-section, .video-tool, .publish-empty, .overview-hero, .future-grid > div'
+    const glassSelector = '.form-panel, .data-card, .publication-card, .links-panel, .tools-section, .list-section, .video-tool, .publish-empty, .overview-hero, .future-grid > div, .audio-dock'
     let activeCard: HTMLElement | null = null
     let frame = 0
     let pending: { card: HTMLElement | null; x: number; y: number } | null = null
 
     const clearActive = () => {
+      pending = null
       if (!activeCard) return
       activeCard.removeAttribute('data-glass')
       activeCard = null
@@ -569,13 +570,13 @@ function App() {
             <div className="library-context"><span>Текущий проект</span><span>{projectCount(beats.length)}</span></div>
             <section className="feature-section" aria-label="Текущий бит">
               <div className="feature-card">
-                <div className="player-top"><Cover beat={latest} className="feature-cover" /><div className="feature-content"><span className="feature-status">{latest.isDemo ? 'Демо-проект' : latest.status}</span><h2>{latest.title}</h2><p>{latest.bpm} BPM <span>·</span> {latest.key}</p><Waveform light /></div><button className="player-open" onClick={() => openBeat(latest)} aria-label={`Открыть ${latest.title}`}><ChevronRight size={19} /></button></div>
+                <div className="player-top"><Cover beat={latest} className="feature-cover" /><div className="feature-content"><span className="feature-status">{latest.isDemo ? 'Демо-проект' : latest.status}</span><h2>{latest.title}</h2><p>{latest.bpm} BPM <span>·</span> {latest.key}</p></div><button className="player-open" onClick={() => openBeat(latest)} aria-label={`Открыть ${latest.title}`}><ChevronRight size={19} /></button></div>
                 <div className="player-footer"><span>{latest.audioUrl ? latest.audioName : 'Аудио не загружено'}</span><div className="player-controls">{latest.audioUrl ? trackPlayButton(latest) : <button className="player-publish" onClick={() => openPublish(latest)} aria-label="Подготовить публикацию"><Send size={16} /><span>Публикация</span></button>}<button className="player-next" onClick={() => openBeat(latest)}>Открыть бит <ArrowRight size={16} /></button></div></div>
               </div>
             </section>
             <section className="tools-section"><div className="section-heading"><h2>Рабочие шаги</h2></div><div className="tool-grid"><button style={staggerStyle(0)} onClick={() => openBeat(latest, 'data')}><ListMusic size={20} /><span>Параметры</span></button><button style={staggerStyle(1)} onClick={() => openPublish(latest)}><Clipboard size={20} /><span>Публикация</span></button><button style={staggerStyle(2)} onClick={() => openBeat(latest, 'stats')}><Link2 size={20} /><span>Статистика</span></button></div></section>
             <button className="upload-banner" onClick={() => navigate('create')}><span className="upload-banner-icon"><UploadCloud size={23} /></span><span><strong>Добавить свой бит</strong><small>Обложка, аудио, BPM и теги</small></span><span className="upload-banner-arrow"><ArrowRight size={18} /></span></button>
-            <section className="list-section"><div className="list-header"><div><h2>Недавние проекты</h2></div><span className="demo-pill">{beats.every((beat) => beat.isDemo) ? 'Демо' : 'Демо и черновики'}</span></div><div className="beat-list">{beats.map((beat, index) => <button className="beat-row" key={beat.id} style={staggerStyle(index)} onClick={() => openBeat(beat)}>{beat.isDemo ? <span className="row-wave"><Waveform compact /></span> : <Cover beat={beat} className="row-cover" />}<span className="row-main"><strong>{beat.title}</strong><small>{beat.bpm} BPM · {beat.key}</small></span><span className="row-meta">{beat.cloud ? 'Облако' : beat.isDemo ? beat.status : 'На устройстве'}</span><ArrowRight className="row-arrow" size={18} /></button>)}</div><p className="demo-note"><CircleHelp size={15} /> {cloudAvailable ? 'Облачные биты доступны в Telegram на других устройствах. Локальные записи можно перенести из карточки бита.' : 'Примеры показывают интерфейс. Пока свои биты хранятся только на этом устройстве.'}</p></section>
+            <section className="list-section"><div className="list-header"><div><h2>Недавние проекты</h2></div><span className="demo-pill">{beats.every((beat) => beat.isDemo) ? 'Демо' : 'Демо и черновики'}</span></div><div className="beat-list">{beats.map((beat, index) => <button className="beat-row" key={beat.id} style={staggerStyle(index)} onClick={() => openBeat(beat)}>{beat.isDemo ? <span className="row-wave"><Waveform /></span> : <Cover beat={beat} className="row-cover" />}<span className="row-main"><strong>{beat.title}</strong><small>{beat.bpm} BPM · {beat.key}</small></span><span className="row-meta">{beat.cloud ? 'Облако' : beat.isDemo ? beat.status : 'На устройстве'}</span><ArrowRight className="row-arrow" size={18} /></button>)}</div><p className="demo-note"><CircleHelp size={15} /> {cloudAvailable ? 'Облачные биты доступны в Telegram на других устройствах. Локальные записи можно перенести из карточки бита.' : 'Примеры показывают интерфейс. Пока свои биты хранятся только на этом устройстве.'}</p></section>
           </>}
           {screen === 'create' && <>
             <div className="page-heading"><div><h1>Новый бит</h1><p>Добавь параметры, обложку и аудио для предпросмотра.</p></div></div>
