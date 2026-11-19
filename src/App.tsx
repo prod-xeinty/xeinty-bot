@@ -1,6 +1,7 @@
 import xeintyLogo from './assets/xeinty-logo.png'
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
-import { ArrowLeft, ArrowRight, AudioLines, Check, ChevronRight, CircleHelp, Clipboard, Disc3, Download, ExternalLink, FileAudio2, ImagePlus, Link2, ListMusic, Music2, Ellipsis, Pause, Play, Plus, Radio, Send, Trash2, UploadCloud } from 'lucide-react'
+import { ArrowLeft, ArrowRight, AudioLines, Check, ChevronRight, CircleHelp, Clipboard, Disc3, Download, ExternalLink, FileAudio2, ImagePlus, Link2, ListMusic, Music2, Ellipsis, Plus, Radio, Send, Trash2, UploadCloud } from 'lucide-react'
+import { AudioDock, PlayPauseIcon, useAudioPlayer } from './audio-player'
 import { getTelegramWebApp } from './telegram'
 import { makeStaticVideo, type VideoStage } from './video'
 import { saveVideoFile } from './save-video'
@@ -85,7 +86,6 @@ function App() {
   const [batchCoverFile, setBatchCoverFile] = useState<File | null>(null)
   const [includeTelegramCover, setIncludeTelegramCover] = useState(() => localStorage.getItem('xeinty-telegram-cover') !== 'false')
   const [coverFile, setCoverFile] = useState<File | null>(null)
-  const [isPlaying, setIsPlaying] = useState(false)
   const [publicationPlatform, setPublicationPlatform] = useState<'telegram' | 'youtube'>('telegram')
   const [videoSource, setVideoSource] = useState<'generated' | 'own'>('generated')
   const [videoStage, setVideoStage] = useState<VideoStage | null>(null)
@@ -97,11 +97,20 @@ function App() {
   const shellRef = useRef<HTMLDivElement>(null)
   const videoUrlRef = useRef<string | null>(null)
   const fileUrlsRef = useRef<string[]>([])
-  const playerRef = useRef<HTMLAudioElement>(null)
   const cloudSaveTimersRef = useRef(new Map<string, number>())
   const pendingCloudWrites = useRef(new Map<string, Promise<void>>())
   const selected = beats.find((beat) => beat.id === selectedId) ?? beats[0]
   const latest = beats[0]
+  const audioPlayer = useAudioPlayer(notify)
+  const playingTrack = beats.find((beat) => beat.id === audioPlayer.trackId && beat.audioUrl)
+
+  function trackPlayButton(beat: Beat) {
+    const playing = audioPlayer.trackId === beat.id && audioPlayer.playing
+    return <button type="button" className="player-play" onClick={() => audioPlayer.toggle(beat)}
+      aria-label={(playing ? 'Пауза: ' : 'Воспроизвести: ') + beat.title}>
+      <PlayPauseIcon playing={playing} />
+    </button>
+  }
   const savedAudioBeats = beats.filter((beat) => !beat.isDemo && (beat.audioFile || beat.audioUrl))
   const batchBeats = batchSelectedIds.flatMap((id) => savedAudioBeats.filter((beat) => beat.id === id))
   const cloudAvailable = cloudConfigured() && Boolean(webApp?.initData)
@@ -343,8 +352,6 @@ function App() {
 
   function notify(message: string) { setToast(message); window.setTimeout(() => setToast(''), 3500) }
   function navigate(next: Screen) {
-    playerRef.current?.pause()
-    setIsPlaying(false)
     if (next === 'publish' && selected.isDemo) {
       const firstOwnBeat = beats.find((beat) => !beat.isDemo)
       if (firstOwnBeat) setSelectedId(firstOwnBeat.id)
@@ -402,11 +409,6 @@ function App() {
     }
     else if (!updated.isDemo) void saveBeatMetadata(storedBeat(updated)).catch(() => notify('Изменения не сохранились на устройстве'))
   }
-  function togglePreview() {
-    if (!latest.audioUrl || !playerRef.current) return
-    if (isPlaying) { playerRef.current.pause(); setIsPlaying(false) }
-    else { void playerRef.current.play().then(() => setIsPlaying(true)).catch(() => notify('Не удалось воспроизвести файл')) }
-  }
   async function createVideo() {
     if (videoStage || (!selected.audioFile && !selected.audioUrl) || (!selected.coverFile && !selected.coverUrl)) return
     setVideoError('')
@@ -447,6 +449,7 @@ function App() {
     try {
       if (selected.cloud && webApp?.initData) await deleteCloudBeat(webApp.initData, selected.id)
       else await deleteStoredBeat(selected.id)
+      if (audioPlayer.trackId === selected.id) audioPlayer.close()
       if (selected.coverUrl?.startsWith('blob:')) URL.revokeObjectURL(selected.coverUrl)
       if (selected.audioUrl?.startsWith('blob:')) URL.revokeObjectURL(selected.audioUrl)
       if (videoResult?.beatId === selected.id) {
@@ -552,7 +555,7 @@ function App() {
   const activeNavIndex = nav.findIndex(({ id }) => id === activeScreen)
   const activeMobileIndex = mobileNav.findIndex(({ id }) => id === activeScreen)
 
-  return <div className="app-shell" ref={shellRef}>
+  return <div className={'app-shell' + (playingTrack ? ' has-audio-dock' : '')} ref={shellRef}>
     <div className="ambient-stage" aria-hidden="true">
       <div className="ambient-form ambient-form--a" />
       <div className="ambient-form ambient-form--b" />
@@ -567,8 +570,7 @@ function App() {
             <section className="feature-section" aria-label="Текущий бит">
               <div className="feature-card">
                 <div className="player-top"><Cover beat={latest} className="feature-cover" /><div className="feature-content"><span className="feature-status">{latest.isDemo ? 'Демо-проект' : latest.status}</span><h2>{latest.title}</h2><p>{latest.bpm} BPM <span>·</span> {latest.key}</p><Waveform light /></div><button className="player-open" onClick={() => openBeat(latest)} aria-label={`Открыть ${latest.title}`}><ChevronRight size={19} /></button></div>
-                <div className="player-footer"><span>{latest.audioUrl ? latest.audioName : 'Аудио не загружено'}</span><div className="player-controls">{latest.audioUrl ? <button className="player-play" onClick={togglePreview} aria-label={isPlaying ? 'Пауза' : 'Воспроизвести'} title="Предпрослушать бит">{isPlaying ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}</button> : <button className="player-publish" onClick={() => openPublish(latest)} aria-label="Подготовить публикацию"><Send size={16} /><span>Публикация</span></button>}<button className="player-next" onClick={() => openBeat(latest)}>Открыть бит <ArrowRight size={16} /></button></div></div>
-                {latest.audioUrl && <audio key={latest.id} ref={playerRef} src={latest.audioUrl} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} onEnded={() => setIsPlaying(false)} preload="metadata" />}
+                <div className="player-footer"><span>{latest.audioUrl ? latest.audioName : 'Аудио не загружено'}</span><div className="player-controls">{latest.audioUrl ? trackPlayButton(latest) : <button className="player-publish" onClick={() => openPublish(latest)} aria-label="Подготовить публикацию"><Send size={16} /><span>Публикация</span></button>}<button className="player-next" onClick={() => openBeat(latest)}>Открыть бит <ArrowRight size={16} /></button></div></div>
               </div>
             </section>
             <section className="tools-section"><div className="section-heading"><h2>Рабочие шаги</h2></div><div className="tool-grid"><button style={staggerStyle(0)} onClick={() => openBeat(latest, 'data')}><ListMusic size={20} /><span>Параметры</span></button><button style={staggerStyle(1)} onClick={() => openPublish(latest)}><Clipboard size={20} /><span>Публикация</span></button><button style={staggerStyle(2)} onClick={() => openBeat(latest, 'stats')}><Link2 size={20} /><span>Статистика</span></button></div></section>
@@ -654,13 +656,15 @@ function App() {
             <div className="page-heading"><div><h1>Статистика</h1><p>Статистика всех опубликованных битов.</p></div></div><div className="overview-hero"><div className="overview-symbol"><AudioLines size={28} /></div><h2>Статистика появится позже</h2><p>Просмотры и динамика битов станут доступны после подключения Telegram и YouTube. Сейчас источники не подключены.</p><button className="outline-button" onClick={() => navigate('library')}>Вернуться к битам <ArrowRight size={18} /></button></div><div className="future-grid"><div><Radio size={22} /><strong>Telegram</strong><span>Статистика постов канала</span></div><div><Disc3 size={22} /><strong>YouTube</strong><span>Просмотры и публикации</span></div></div>
           </>}
           {screen === 'detail' && selected && <>
-            <button className="back-link" onClick={() => navigate('library')}><ArrowLeft size={17} /> Все биты</button><section className="detail-hero"><Cover beat={selected} className="detail-cover" /><div className="detail-identity"><div className="eyebrow">{selected.isDemo ? 'Демо-проект' : 'Черновик'}</div><h1>{selected.title}</h1><p>{selected.tags}</p><div className="meta-row"><span>{selected.bpm} BPM</span><i /><span>{selected.key}</span></div><div className="detail-audio">{selected.audioUrl ? <><FileAudio2 size={17} /><span>{selected.audioName}</span><audio src={selected.audioUrl} controls preload="metadata" /></> : <><Music2 size={18} /><span>{selected.isDemo ? 'Аудио для этого демо-бита не загружено' : 'Аудиофайл не добавлен'}</span></>}</div></div></section>
+            <button className="back-link" onClick={() => navigate('library')}><ArrowLeft size={17} /> Все биты</button><section className="detail-hero"><Cover beat={selected} className="detail-cover" /><div className="detail-identity"><div className="eyebrow">{selected.isDemo ? 'Демо-проект' : 'Черновик'}</div><h1>{selected.title}</h1><p>{selected.tags}</p><div className="meta-row"><span>{selected.bpm} BPM</span><i /><span>{selected.key}</span></div><div className="detail-audio">{selected.audioUrl ? <><FileAudio2 size={17} /><span>{selected.audioName}</span>{trackPlayButton(selected)}</> : <><Music2 size={18} /><span>{selected.isDemo ? 'Аудио для этого демо-бита не загружено' : 'Аудиофайл не добавлен'}</span></>}</div></div></section>
             <div className="detail-tabs" role="tablist" aria-label="Разделы бита">{([['data', 'Данные'], ['stats', 'Статистика']] as [DetailTab, string][]).map(([id, label]) => <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? 'is-active' : ''} onClick={() => setTab(id)}>{label}</button>)}</div>
             {tab === 'data' && <div className="detail-section" key="data"><div className="section-intro"><h2>Данные бита</h2><p>Изменения сохраняются автоматически.</p></div><div className="data-card data-card--editable"><label className="field"><span>НАЗВАНИЕ</span><input aria-label="Название бита" maxLength={120} value={selected.title} onChange={(event) => updateBeat({ title: event.target.value })} /></label><label className="field"><span>ТЕМП (BPM)</span><input aria-label="Темп BPM" type="number" min="1" max="300" value={selected.bpm === '—' ? '' : selected.bpm} onChange={(event) => updateBeat({ bpm: event.target.value || '—' })} /></label><label className="field"><span>ТОНАЛЬНОСТЬ</span><KeyPicker value={selected.key} label="Тональность бита" onChange={(key) => updateBeat({ key })} onCommit={(value) => { const key = normalizeMusicKey(value); if (key !== null) updateBeat({ key: key || "—" }); else { updateBeat({ key: "—" }); notify("Не распознал тональность; выбери вариант из списка.") } }} /></label><label className="field"><span>ТЕГИ</span><input aria-label="Теги бита" value={selected.tags} onChange={(event) => updateBeat({ tags: event.target.value })} /></label></div>{!selected.isDemo && <label className="upload-zone cover-edit"><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void changeCover(event.target.files?.[0])} /><ImagePlus size={22} /><strong>Изменить обложку</strong><span>JPG, PNG или WEBP до 2 МБ</span></label>}<p className="detail-footnote">Подписи для площадок редактируются в разделе «Публикация». {selected.cloud ? 'MP3 и обложка хранятся в облаке.' : ''}</p>{!selected.isDemo && <div className="delete-beat">{cloudAvailable && !selected.cloud && <button onClick={migrateBeat} disabled={savingBeat}><UploadCloud size={16} /> {savingBeat ? 'Переносим…' : 'Перенести в облако'}</button>}{confirmDelete ? <><p>Удалить «{selected.title}» вместе с аудио и обложкой {selected.cloud ? 'из облака' : 'с этого устройства'}?</p><div><button onClick={() => setConfirmDelete(false)}>Отмена</button><button className="delete-beat-confirm" onClick={deleteBeat} disabled={deleting}>Подтвердить удаление</button></div></> : <button onClick={() => setConfirmDelete(true)}><Trash2 size={16} /> Удалить бит</button>}</div>}</div>}
             {tab === 'stats' && <div className="detail-section" key="stats"><div className="section-intro"><h2>Статистика</h2><p>Публикации этого бита и их показатели.</p></div><div className="links-panel"><div className="stats-notice"><Radio size={20} /><div><strong>{selected.telegramLink || selected.youtubeLink ? 'Публикации добавлены' : 'Публикаций пока нет'}</strong><p>{selected.telegramLink || selected.youtubeLink ? 'Ссылки сохранены. Подсчёт просмотров появится после подключения Telegram и YouTube.' : 'После публикации добавь ссылку на пост или видео. Просмотры пока не подключены.'}</p></div></div><label className="field"><span>ПОСТ В TELEGRAM</span><div className="link-input"><Link2 size={18} /><input type="url" placeholder="https://t.me/yourchannel/123" value={selected.telegramLink} onChange={(e) => updateBeat({ telegramLink: e.target.value })} />{selected.telegramLink && <a href={selected.telegramLink} target="_blank" rel="noreferrer" aria-label="Открыть Telegram"><ExternalLink size={17} /></a>}</div></label><label className="field"><span>ВИДЕО НА YOUTUBE</span><div className="link-input"><Link2 size={18} /><input type="url" placeholder="https://youtube.com/watch?v=..." value={selected.youtubeLink} onChange={(e) => updateBeat({ youtubeLink: e.target.value })} />{selected.youtubeLink && <a href={selected.youtubeLink} target="_blank" rel="noreferrer" aria-label="Открыть YouTube"><ExternalLink size={17} /></a>}</div></label><p className="form-hint">{selected.cloud ? 'Ссылки сохраняются в облаке.' : 'Ссылки сохраняются на этом устройстве.'}</p></div></div>}
           </>}
         </main>
       </div>
+      {audioPlayer.element}
+      {playingTrack && <AudioDock player={audioPlayer} track={playingTrack} cover={<Cover beat={playingTrack} className="audio-dock-cover" />} />}
       <nav className="bottom-nav" aria-label="Главная навигация" data-has-active={activeMobileIndex >= 0} style={{ '--nav-i': Math.max(0, activeMobileIndex), '--nav-count': mobileNav.length } as CSSProperties}>{mobileNav.map(({ id, label, Icon }) => <button key={id} className={activeScreen === id ? 'is-active' : ''} onClick={() => navigate(id)}><Icon size={21} /><span>{label}</span></button>)}</nav>
       {toast && <div className="toast" role="status"><Check size={17} />{toast}</div>}
     </div>
