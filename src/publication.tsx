@@ -1,3 +1,4 @@
+import { Dropdown } from './choice-menu'
 import { useEffect, useState } from 'react'
 import type { TelegramChannel, TelegramPublication } from './cloud-beats'
 
@@ -28,10 +29,9 @@ export function DirectTelegramPublication({ publish, channels }: {
     event.preventDefault()
     if (!busy && !result && selectedChannel) setConfirm(true)
   }}>
-    <label className="field"><span>Канал Telegram</span><select required value={selectedChannel?.id ?? ''} disabled={busy || confirm || Boolean(result)} onChange={(event) => setChannel(event.target.value)}>
-      <option value="">Выбрать канал</option>
-      {channels.map((item) => <option key={item.id} value={item.id}>{item.title}{item.username ? ' (@' + item.username + ')' : ''}</option>)}
-    </select></label>
+    <Dropdown label="Канал Telegram" placeholder="Выбрать канал" value={selectedChannel?.id ?? ''}
+      disabled={!channels.length || busy || confirm || Boolean(result)} onChange={setChannel}
+      options={channels.map((item) => ({ value: item.id, label: item.title + (item.username ? ' (@' + item.username + ')' : '') }))} />
     {!result && channels.length === 0 && <p className="form-hint">Сначала подключи канал во вкладке «Каналы».</p>}
     {!confirm && !result && <button className="copy-button" disabled={!selectedChannel}>Опубликовать через бота</button>}
     {confirm && <>
