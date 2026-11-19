@@ -106,11 +106,16 @@ export function readCover(value: unknown): File | undefined {
   if (bytes.length > 2 * 1024 * 1024) throw new TelegramPublishError('Обложка должна быть до 2 МБ.')
   return new File([bytes], `cover.${match[1].split('/')[1]}`, { type: match[1] })
 }
-export async function telegramChannelProfile(id: string) {
-  const [chat, count] = await Promise.all([
+
+export async function telegramChannelProfile(id: string, userId: number) {
+  const [chat, count, member] = await Promise.all([
     api<Chat & { photo?: { small_file_id: string } }>('getChat', { chat_id: id }),
     api<number>('getChatMemberCount', { chat_id: id }).catch(() => null),
+    api<Member>('getChatMember', { chat_id: id, user_id: userId }),
   ])
+  if (member.status !== 'creator' && member.status !== 'administrator') {
+    throw new TelegramPublishError('Профиль канала доступен его администраторам.')
+  }
   let avatar: string | null = null
   if (chat.photo?.small_file_id) {
     try {

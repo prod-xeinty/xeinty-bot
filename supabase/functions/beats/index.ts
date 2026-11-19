@@ -171,7 +171,7 @@ Deno.serve(async (request) => {
         .eq('telegram_user_id', userId).eq('chat_id', body.channel).maybeSingle()
       if (error) throw error
       if (!data) return reply({ error: 'Канал не подключён' }, 404, origin)
-      return reply(await telegramChannelProfile(body.channel), 200, origin)
+      return reply(await telegramChannelProfile(body.channel, userId), 200, origin)
     }
 
     if (action === 'list-telegram-channels') {
