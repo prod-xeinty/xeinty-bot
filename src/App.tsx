@@ -1,3 +1,4 @@
+import { YoutubeUpload } from './youtube-upload'
 import xeintyLogo from './assets/xeinty-logo.png'
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { ArrowLeft, ArrowRight, AudioLines, Check, ChevronRight, CircleHelp, Clipboard, Disc3, Download, ExternalLink, FileAudio2, ImagePlus, Link2, ListMusic, Music2, Ellipsis, Plus, Radio, Send, Trash2, UploadCloud } from 'lucide-react'
@@ -79,6 +80,7 @@ function App() {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [savingBeat, setSavingBeat] = useState(false)
+  const [ownVideo, setOwnVideo] = useState<{ beatId: string; file: File }>()
   const [videoResult, setVideoResult] = useState<{ beatId: string; url: string; blob: Blob; size: number; seconds: number } | null>(null)
   const shellRef = useRef<HTMLDivElement>(null)
   const videoUrlRef = useRef<string | null>(null)
@@ -87,6 +89,11 @@ function App() {
   const pendingCloudWrites = useRef(new Map<string, Promise<void>>())
   const selected = beats.find((beat) => beat.id === selectedId) ?? beats[0]
   const latest = beats[0]
+  const selectedOwnVideo = ownVideo?.beatId === selected.id ? ownVideo.file : undefined
+  const youtubeVideo = videoSource === 'own' ? selectedOwnVideo : videoResult?.beatId === selected.id ? videoResult.blob : undefined
+  const youtubeFileKey = videoSource === 'own'
+    ? selectedOwnVideo ? [selectedOwnVideo.name, selectedOwnVideo.size, selectedOwnVideo.lastModified].join(':') : 'own'
+    : videoResult?.beatId === selected.id ? videoResult.url : 'generated'
   const audioPlayer = useAudioPlayer(notify)
   const playingTrack = beats.find((beat) => beat.id === audioPlayer.trackId && beat.audioUrl)
 
@@ -585,7 +592,7 @@ function App() {
 
               <div className="video-tool"><Dropdown label="Видео для YouTube" value={videoSource} onChange={(value) => setVideoSource(value === 'own' ? 'own' : 'generated')}
                   options={[{ value: 'generated', label: 'Собрать видео в XEINTY' }, { value: 'own', label: 'Приложить своё видео' }]} />
-                {videoSource === 'own' ? <OwnYoutubeVideo key={selected.id} /> : <>
+                {videoSource === 'own' ? <OwnYoutubeVideo key={selected.id} file={selectedOwnVideo} onChange={(file) => setOwnVideo(file ? { beatId: selected.id, file } : undefined)} /> : <>
                 {(selected.audioFile || selected.audioUrl) && (selected.coverFile || selected.coverUrl) ? <>
                   <button className="primary-button video-action" onClick={createVideo} disabled={videoStage !== null}>{videoStage ? 'Сборка идёт…' : 'Собрать MP4'} {!videoStage && <ArrowRight size={18} />}</button>
                   {videoStage && <p className="video-status" role="status">{videoStage === 'loading' ? 'Загружаем видеодвижок — около 31 МБ…' : videoStage === 'preparing' ? 'Подготавливаем файлы…' : 'Собираем видео. Не закрывай Telegram…'}</p>}
@@ -594,6 +601,17 @@ function App() {
                 </> : <p className="video-hint">Для сборки MP4 нужны обложка и MP3 или WAV.</p>}
                 </>}
               </div>
+              {cloudAvailable && selected.cloud && webApp?.initData && <YoutubeUpload
+                key={selected.id + ':' + youtubeFileKey} initData={webApp.initData} beatId={selected.id}
+                video={youtubeVideo} fileKey={youtubeFileKey} existingLink={selected.youtubeLink}
+                openLink={webApp.openLink ? (url) => webApp.openLink?.(url) : undefined}
+                beforeStart={async () => {
+                  window.clearTimeout(cloudSaveTimersRef.current.get(selected.id))
+                  cloudSaveTimersRef.current.delete(selected.id)
+                  await persistBeat(selected)
+                }}
+                onSaved={(youtubeLink) => setBeats((all) => all.map((beat) => beat.id === selected.id ? { ...beat, youtubeLink } : beat))} />}
+              {cloudAvailable && !selected.cloud && <p className="form-hint">Чтобы загрузить видео напрямую, перенеси бит в облако из карточки бита.</p>}
                 </div>
               </div>
 

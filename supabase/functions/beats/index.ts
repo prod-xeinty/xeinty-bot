@@ -2,6 +2,8 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { channelForPublisher, postAudio, postCover, readCover, TelegramPublishError } from './telegram-publish.ts'
 
+import { youtubeAction, youtubeCallback } from './youtube.ts'
+
 const bucket = 'beat-previews'
 const encoder = new TextEncoder()
 const allowedOrigin = 'https://prod-xeinty.github.io'
@@ -121,6 +123,9 @@ function client() {
 }
 
 Deno.serve(async (request) => {
+  if (request.method === 'GET' && new URL(request.url).pathname.endsWith('/beats/youtube/callback')) {
+    return youtubeCallback(client(), request)
+  }
   const origin = originFor(request)
   if (!origin) return new Response('Forbidden origin', { status: 403 })
   if (request.method === 'OPTIONS') return reply({}, 204, origin)
@@ -132,6 +137,10 @@ Deno.serve(async (request) => {
     if (!userId) return reply({ error: 'Открой XEINTY через Telegram заново' }, 401, origin)
     const db = client()
     const action = body.action
+    if (typeof action === 'string' && action.startsWith('youtube-')) {
+      const result = await youtubeAction(db, userId, body)
+      return reply(result.data, result.status ?? 200, origin)
+    }
 
     if (action === 'list') {
       const { data, error } = await db.from('beats').select('*').eq('telegram_user_id', userId).order('created_at', { ascending: false }).limit(200)
@@ -272,12 +281,12 @@ Deno.serve(async (request) => {
         return reply({ error: 'Некорректные данные бита' }, 400, origin)
       }
       const audioInfo = await db.storage.from(bucket).info(body.audioPath)
-      if (audioInfo.error || !audioInfo.data || audioInfo.data.size < 1 || audioInfo.data.size > maxAudioSize) {
+      if (audioInfo.error || typeof audioInfo.data?.size !== 'number' || audioInfo.data.size < 1 || audioInfo.data.size > maxAudioSize) {
         return reply({ error: 'MP3 не загружен или слишком большой' }, 400, origin)
       }
       if (body.coverPath) {
         const coverInfo = await db.storage.from(bucket).info(body.coverPath)
-        if (coverInfo.error || !coverInfo.data || coverInfo.data.size < 1 || coverInfo.data.size > maxCoverSize) {
+        if (coverInfo.error || typeof coverInfo.data?.size !== 'number' || coverInfo.data.size < 1 || coverInfo.data.size > maxCoverSize) {
           return reply({ error: 'Обложка не загружена или слишком большая' }, 400, origin)
         }
       }
@@ -305,7 +314,7 @@ Deno.serve(async (request) => {
       }
       if (typeof body.path !== 'string' || !body.path.startsWith(`${userId}/${owned.data.id}/cover-`) || !/^\d+\/[0-9a-f-]+\/cover-[0-9a-f-]+\.(jpg|png|webp)$/.test(body.path)) return reply({ error: 'Некорректный путь обложки' }, 400, origin)
       const info = await db.storage.from(bucket).info(body.path)
-      if (info.error || !info.data || info.data.size < 1 || info.data.size > maxCoverSize) return reply({ error: 'Обложка не загружена или слишком большая' }, 400, origin)
+      if (info.error || typeof info.data?.size !== 'number' || info.data.size < 1 || info.data.size > maxCoverSize) return reply({ error: 'Обложка не загружена или слишком большая' }, 400, origin)
       const updated = await db.from('beats').update({ cover_path: body.path, updated_at: new Date().toISOString() }).eq('id', body.id).eq('telegram_user_id', userId)
       if (updated.error) throw updated.error
       if (owned.data.cover_path) await db.storage.from(bucket).remove([owned.data.cover_path])
