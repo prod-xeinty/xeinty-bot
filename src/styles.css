@@ -300,12 +300,20 @@ input, textarea { caret-color: #fff; }
 .create-submit > span { color: #a0a0a1; font-size: 12px; }
 
 .overview-hero { max-width: 710px; padding: 32px; border: 1px solid #ffffff27; border-radius: 22px; background: #1c1c1d; animation: card-enter var(--dur-enter) var(--ease-enter) 30ms both; }
-.overview-hero.youtube-stats h2 { margin: 0 0 14px; font-size: clamp(22px, 3vw, 30px); }
-.youtube-stats-total { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 14px; }
-.youtube-stats-total strong { font-size: clamp(29px, 5vw, 46px); line-height: 1.1; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-.youtube-stats-total span, .youtube-stats-actions small { color: #b8b8b8; font-size: 13px; }
+.overview-hero.youtube-stats { padding: clamp(16px, 4vw, 32px); }
+.stats-platform-switch { display: inline-flex; gap: 3px; padding: 3px; border: 1px solid #ffffff26; border-radius: 12px; background: #111112; }
+.stats-platform-switch button { min-height: 36px; padding: 0 14px; border-radius: 9px; color: #b8b8b8; transition: background 160ms ease, color 160ms ease; }
+.stats-platform-switch button[aria-pressed="true"] { background: #eaeaea; color: #141414; font-weight: 700; }
+.stats-metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(120px, 45%), 1fr)); gap: 8px; margin: 16px 0 10px; }
+.stats-metric-card { min-width: 0; padding: 12px; border: 1px solid #ffffff24; border-radius: 12px; background: #ffffff09; }
+.stats-metric-card dt, .stats-list-heading span, .stats-coverage, .youtube-stats-actions small { color: #b8b8b8; font-size: 12px; }
+.stats-metric-card dd { margin: 4px 0 0; font-size: clamp(20px, 4vw, 31px); line-height: 1.16; font-weight: 650; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.stats-metric-card dd span { color: #a2a2a3; }
+.stats-coverage { display: grid; gap: 3px; }
+.stats-list-heading { display: flex; align-items: baseline; justify-content: space-between; margin-top: 18px; }
+.overview-hero.youtube-stats .stats-list-heading h2, .youtube-beat-views h3 { margin: 0; font-size: 16px; }
 .youtube-stats-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; margin-top: 12px; }
-.youtube-stats-list { list-style: none; margin: 20px 0 0; padding: 0; }
+.youtube-stats-list { list-style: none; margin: 8px 0 0; padding: 0; }
 .youtube-stats-list li { border-top: 1px solid #ffffff25; }
 .youtube-stats-list button { display: flex; width: 100%; align-items: baseline; justify-content: space-between; gap: 12px; padding: 12px 2px; text-align: left; }
 .youtube-stats-list button span { min-width: 0; overflow-wrap: anywhere; }
