@@ -9,7 +9,7 @@ import { getTelegramWebApp } from './telegram'
 import { makeStaticVideo, videoProfileLabel, type VideoStage } from './video'
 import { saveVideoFile } from './save-video'
 import { deleteStoredBeat, loadStoredBeats, saveBeatCover, saveBeatMetadata, saveNewBeat, type StoredBeat } from './beat-store'
-import { cloudConfigured, connectTelegramChannel, disconnectTelegramChannel, loadTelegramChannels, type TelegramChannel, type TelegramPublication, type PublicationLinks, createCloudBeat, deleteCloudBeat, loadCloudBeats, publishCloudTelegram, remoteFile, replaceCloudCover, updateCloudBeat } from './cloud-beats'
+import { changeYoutubeSchedule, cloudConfigured, connectTelegramChannel, disconnectTelegramChannel, loadTelegramChannels, type TelegramChannel, type TelegramPublication, type PublicationLinks, createCloudBeat, deleteCloudBeat, loadCloudBeats, publishCloudTelegram, remoteFile, replaceCloudCover, updateCloudBeat } from './cloud-beats'
 import { normalizeMusicKey } from './music-key'
 import { Dropdown, KeyPicker } from './choice-menu'
 import { parseAudioName } from './filename'
@@ -429,6 +429,24 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
     if (result.saved) setBeats((all) => all.map((beat) => beatIds.includes(beat.id) ? rememberPublication(beat, 'telegram', result.url) : beat))
   }
 
+  async function manageYoutubeSchedule(url: string, expectedPublishAt: string, publishAt: string | null) {
+    if (!webApp?.initData) throw new Error('Открой XEINTY через Telegram.')
+    const result = await changeYoutubeSchedule(webApp.initData, { beatId: selected.id, url, expectedPublishAt, publishAt })
+    if (result.saved) {
+      setBeats((all) => all.map((beat) => {
+        const publications = getBeatPublications(beat)
+        if (!publications.some((post) => post.platform === 'youtube' && post.url === url)) return beat
+        return { ...beat,
+          youtubePublishAt: beat.youtubeLink === url ? result.publishAt : beat.youtubePublishAt,
+          publications: publications.map((post) => post.platform === 'youtube' && post.url === url ? { ...post, publishAt: result.publishAt } : post),
+        }
+      }))
+      youtubeStats.refresh()
+      notify(result.changed ? (result.publishAt ? 'Выход перенесён' : 'Выход отменён') : 'Расписание сверено с YouTube. Проверь статус видео.')
+    }
+    return result
+  }
+
   async function savePublicationLink(platform: 'telegram' | 'youtube', url: string) {
     const id = selected.id
     const updated = rememberPublication(selected, platform, url)
@@ -740,7 +758,8 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
             {tab === 'data' && <div className="detail-section" key="data"><div className="section-intro"><h2>Данные бита</h2><p>Изменения сохраняются автоматически.</p></div><div className="data-card data-card--editable"><label className="field"><span>НАЗВАНИЕ</span><input aria-label="Название бита" maxLength={120} value={selected.title} onChange={(event) => updateBeat({ title: event.target.value })} /></label><label className="field"><span>ТЕМП (BPM)</span><input aria-label="Темп BPM" type="number" min="1" max="300" value={selected.bpm === '—' ? '' : selected.bpm} onChange={(event) => updateBeat({ bpm: event.target.value || '—' })} /></label><div className="field"><span>ТОНАЛЬНОСТЬ</span><KeyPicker value={selected.key} label="Тональность бита" onChange={(key) => updateBeat({ key })} onCommit={(value) => { const key = normalizeMusicKey(value); if (key !== null) updateBeat({ key: key || "—" }); else { updateBeat({ key: "—" }); notify("Не распознал тональность; выбери вариант из списка.") } }} /></div><label className="field"><span>ТЕГИ</span><input aria-label="Теги бита" value={selected.tags} onChange={(event) => updateBeat({ tags: event.target.value })} /></label></div>{!selected.isDemo && <label className="upload-zone cover-edit"><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void changeCover(event.target.files?.[0])} /><ImagePlus size={22} /><strong>Изменить обложку</strong><span>JPG, PNG или WEBP до 2 МБ</span></label>}<p className="detail-footnote">Подписи для площадок редактируются в разделе «Публикация». {selected.cloud ? 'MP3 и обложка хранятся в облаке.' : ''}</p>{!selected.isDemo && <div className="delete-beat">{cloudAvailable && !selected.cloud && <button onClick={migrateBeat} disabled={savingBeat}><UploadCloud size={16} /> {savingBeat ? 'Переносим…' : 'Перенести в облако'}</button>}{confirmDelete ? <><p>Удалить «{selected.title}» вместе с аудио и обложкой {selected.cloud ? 'из облака' : 'с этого устройства'}?</p><div><button onClick={() => setConfirmDelete(false)}>Отмена</button><button className="delete-beat-confirm" onClick={deleteBeat} disabled={deleting}>Подтвердить удаление</button></div></> : <button onClick={() => setConfirmDelete(true)}><Trash2 size={16} /> Удалить бит</button>}</div>}</div>}
             {tab === 'publications' && <PublicationHistory key={selected.id} beat={selected} channels={channels}
               stats={{ youtube: youtubeStats.stats, telegram: telegramStats.stats }} save={savePublicationLink}
-              openPublication={() => openPublish(selected)} />}
+              manageSchedule={cloudAvailable && selected.cloud ? manageYoutubeSchedule : undefined}
+              openChannels={() => navigate('channels')} openPublication={() => openPublish(selected)} />}
           </>}
         </main>
       </div>

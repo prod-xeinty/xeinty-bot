@@ -2,8 +2,9 @@ import { useState, type FormEvent } from 'react'
 import { ArrowUpRight, Play, Send } from 'lucide-react'
 import { Dropdown } from './choice-menu'
 import { YoutubeReleaseTime } from './youtube-upload'
+import { YoutubeScheduleEditor } from './youtube-schedule'
 import type { BeatPublication, StoredBeat } from './beat-store'
-import type { PlatformStats, StatsPlatform, TelegramChannel } from './cloud-beats'
+import type { PlatformStats, StatsPlatform, TelegramChannel, YoutubeScheduleResult } from './cloud-beats'
 
 type PublicationSource = Pick<StoredBeat, 'telegramLink' | 'youtubeLink' | 'youtubePublishAt' | 'publications'>
 const names = { telegram: 'Telegram', youtube: 'YouTube' }
@@ -57,10 +58,12 @@ function channelName(post: BeatPublication, channels: TelegramChannel[]) {
   return username ? channels.find((channel) => channel.username?.toLowerCase() === username.toLowerCase())?.title ?? '@' + username : ''
 }
 
-export function PublicationHistory({ beat, channels, stats, save, openPublication }: {
+export function PublicationHistory({ beat, channels, stats, save, openPublication, manageSchedule, openChannels }: {
   beat: PublicationSource & { id: string; isDemo?: boolean }; channels: TelegramChannel[];
   stats: Record<StatsPlatform, PlatformStats | undefined>;
-  save: (platform: StatsPlatform, url: string) => Promise<void>; openPublication: () => void
+  save: (platform: StatsPlatform, url: string) => Promise<void>; openPublication: () => void;
+  manageSchedule?: (url: string, expectedPublishAt: string, publishAt: string | null) => Promise<YoutubeScheduleResult>;
+  openChannels: () => void
 }) {
   const [platform, setPlatform] = useState<StatsPlatform>('telegram')
   const [value, setValue] = useState('')
@@ -95,6 +98,7 @@ export function PublicationHistory({ beat, channels, stats, save, openPublicatio
       const scheduled = post.publishAt && Date.parse(post.publishAt) > Date.now()
       const status = post.platform === 'telegram' && metrics?.mediaKey ? 'Опубликовано' : visibilityNames.get(metrics?.visibility ?? '')
       const telegram = post.platform === 'telegram'
+      const scheduledDate = !telegram && scheduled ? post.publishAt : null
       const counters = [
         [telegram ? 'Просмотры поста' : 'Просмотры', metrics?.views],
         [telegram ? 'Реакции' : 'Лайки', telegram ? metrics?.reactions : metrics?.likes],
@@ -112,6 +116,10 @@ export function PublicationHistory({ beat, channels, stats, save, openPublicatio
           {metrics?.restricted && <small>Проверь подключение и права канала во вкладке «Каналы».</small>}
         </div>
         {href && <a className="outline-button history-open" href={href} target="_blank" rel="noreferrer" aria-label={'Открыть публикацию ' + names[post.platform]}><ArrowUpRight size={17} /></a>}
+        {scheduledDate && manageSchedule && <div className="history-schedule">
+          <YoutubeScheduleEditor key={scheduledDate} date={scheduledDate} openChannels={openChannels}
+            onChange={(next) => manageSchedule(post.url, scheduledDate, next)} />
+        </div>}
       </li>
     })}</ul>}
     {!beat.isDemo && <form className="links-panel history-add" onSubmit={submit}>

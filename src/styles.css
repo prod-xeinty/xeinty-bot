@@ -717,3 +717,12 @@ input, textarea { caret-color: #fff; }
 .view-history-chart li { display: flex; align-items: end; flex: 1; min-width: 0; height: 100%; }
 .view-history-chart span { width: 100%; height: max(2px, var(--bar-height)); border-radius: 4px 4px 0 0; background: linear-gradient(#e4e4e4, #616163); }
 .view-history-axis { display: flex; justify-content: space-between; margin-top: 6px; color: #b8b8b8; font-size: 11px; }
+
+.history-schedule { grid-column: 1 / -1; min-width: 0; border-top: 1px solid #ffffff1c; padding-top: 10px; }
+.schedule-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.schedule-actions .outline-button, .schedule-actions .primary-button { min-height: 40px; }
+.schedule-editor { display: grid; gap: 10px; }
+.schedule-editor .field { max-width: 330px; }
+.schedule-editor .field input { color-scheme: dark; min-width: 0; }
+.schedule-editor .field small { color: #a2a2a3; }
+.schedule-editor p { margin: 0; }

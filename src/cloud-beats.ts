@@ -112,7 +112,7 @@ export async function publishCloudTelegram(initData: string, payload: {
   return call(initData, 'publish-telegram', payload)
 }
 
-export type ChannelProfile = { title?: string; username?: string | null; avatar?: string | null; subscribers?: number | null; needsAccess?: boolean }
+export type ChannelProfile = { title?: string; username?: string | null; avatar?: string | null; subscribers?: number | null; needsAccess?: boolean; canManageSchedule?: boolean }
 
 export function loadTelegramChannelProfile(initData: string, channel: string) {
   return call<ChannelProfile>(initData, 'telegram-channel-profile', { channel })
@@ -164,8 +164,16 @@ export function youtubeConnection(initData: string) {
   return call<YoutubeConnection>(initData, 'youtube-status')
 }
 
-export function createYoutubeConnection(initData: string) {
-  return call<{ url: string }>(initData, 'youtube-connect')
+export function createYoutubeConnection(initData: string, manageSchedule = false) {
+  return call<{ url: string }>(initData, 'youtube-connect', { manageSchedule })
+}
+
+export type YoutubeScheduleResult = { publishAt: string | null; changed: boolean; saved: boolean }
+
+export function changeYoutubeSchedule(initData: string, payload: {
+  beatId: string; url: string; expectedPublishAt: string; publishAt: string | null
+}) {
+  return call<YoutubeScheduleResult>(initData, 'youtube-schedule', payload)
 }
 
 export function disconnectYoutube(initData: string) {
