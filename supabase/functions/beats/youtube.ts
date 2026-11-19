@@ -135,6 +135,51 @@ function scheduledTime(status?: VideoStatus) {
   return status?.privacyStatus === 'private' && Number.isFinite(time) ? new Date(time).toISOString() : null
 }
 
+async function refreshSchedule(db: SupabaseClient, owner: number, cfg: NonNullable<ReturnType<typeof config>>, links: unknown): Promise<Result> {
+  const prefix = 'https://youtu.be/'
+  if (!Array.isArray(links) || links.length > 200 || !links.every((link) =>
+    typeof link === 'string' && link.startsWith(prefix) && videoIdPattern.test(link.slice(prefix.length)))) {
+    throw new YoutubeError('Некорректный список релизов.')
+  }
+  const ids = [...new Set<string>(links.map((link) => link.slice(prefix.length)))]
+  if (!ids.length) return { data: { entries: [], unavailable: 0 } }
+  const { data, error } = await db.from('youtube_uploads').select('video_id,publish_at')
+    .eq('telegram_user_id', owner).not('finalized_at', 'is', null).in('video_id', ids).order('finalized_at', { ascending: false })
+  if (error) throw error
+  const owned = new Map<string, string | null>()
+  for (const row of data ?? []) if (!owned.has(row.video_id)) owned.set(row.video_id, row.publish_at)
+  if (!owned.size) return { data: { entries: [], unavailable: ids.length } }
+
+  const access = await accessToken(db, owner, cfg)
+  const headers = { Authorization: 'Bearer ' + access }
+  const videos = [...owned.keys()]
+  const batches = Array.from({ length: Math.ceil(videos.length / 50) }, (_, index) => videos.slice(index * 50, index * 50 + 50))
+  const groups = await Promise.all(batches.map(async (batch) => {
+    const params = new URLSearchParams({ part: 'status', id: batch.join(','), fields: 'items(id,status(privacyStatus,publishAt))' })
+    const response = await fetch('https://www.googleapis.com/youtube/v3/videos?' + params, { headers, signal: AbortSignal.timeout(10_000) })
+    if (response.status === 403) throw new YoutubeError('Проверь доступ к YouTube во вкладке «Каналы».', 403)
+    if (!response.ok) throw new YoutubeError('Не удалось сверить расписание. Попробуй ещё раз.', 502)
+    const result = await response.json() as { items?: { id: string; status?: VideoStatus }[] }
+    return result.items ?? []
+  }))
+  const entries: {url: string; publishAt: string | null}[] = []
+  for (const { id, status } of groups.flat()) {
+    const expected = owned.get(id)
+    if (expected === undefined || !['private', 'public', 'unlisted'].includes(status?.privacyStatus ?? '')) continue
+    if (status?.privacyStatus === 'private' && status.publishAt && !Number.isFinite(Date.parse(status.publishAt))) continue
+    const publishAt = scheduledTime(status)
+    if ((publishAt === null && expected === null) || (publishAt && expected && Date.parse(expected) === Date.parse(publishAt))) {
+      entries.push({ url: prefix + id, publishAt })
+      continue
+    }
+    const { data: saved, error } = await db.rpc('refresh_youtube_schedule', {
+      p_owner: owner, p_video_id: id, p_expected: expected, p_publish_at: publishAt,
+    })
+    if (!error && saved === true) entries.push({ url: prefix + id, publishAt })
+  }
+  return { data: { entries, unavailable: ids.length - entries.length } }
+}
+
 async function changeSchedule(db: SupabaseClient, owner: number, cfg: NonNullable<ReturnType<typeof config>>, body: Record<string, unknown>): Promise<Result> {
   const { beatId, url, expectedPublishAt, publishAt } = body
   const videoId = typeof url === 'string' ? linkedVideoId(url) : null
@@ -264,6 +309,7 @@ export async function youtubeAction(db: SupabaseClient, userId: number, body: Re
   try {
     if (action === 'youtube-stats') return await youtubeStats(db, userId, cfg)
 
+    if (action === 'youtube-schedule-refresh') return await refreshSchedule(db, userId, cfg, body.links)
     if (action === 'youtube-schedule') return await changeSchedule(db, userId, cfg, body)
 
     if (action === 'youtube-profile') {

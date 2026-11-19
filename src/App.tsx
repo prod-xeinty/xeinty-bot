@@ -10,7 +10,7 @@ import { getTelegramWebApp } from './telegram'
 import { makeStaticVideo, videoProfileLabel, type VideoStage } from './video'
 import { saveVideoFile } from './save-video'
 import { deleteStoredBeat, loadStoredBeats, saveBeatCover, saveBeatMetadata, saveNewBeat, type StoredBeat } from './beat-store'
-import { changeYoutubeSchedule, cloudConfigured, connectTelegramChannel, disconnectTelegramChannel, loadTelegramChannels, type TelegramChannel, type TelegramPublication, type PublicationLinks, createCloudBeat, deleteCloudBeat, loadCloudBeats, publishCloudTelegram, remoteFile, replaceCloudCover, updateCloudBeat } from './cloud-beats'
+import { changeYoutubeSchedule, refreshYoutubeSchedule, cloudConfigured, connectTelegramChannel, disconnectTelegramChannel, loadTelegramChannels, type TelegramChannel, type TelegramPublication, type PublicationLinks, createCloudBeat, deleteCloudBeat, loadCloudBeats, publishCloudTelegram, remoteFile, replaceCloudCover, updateCloudBeat } from './cloud-beats'
 import { normalizeMusicKey } from './music-key'
 import { Dropdown, KeyPicker } from './choice-menu'
 import { parseAudioName } from './filename'
@@ -441,18 +441,39 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
     if (result.saved) setBeats((all) => all.map((beat) => beatIds.includes(beat.id) ? rememberPublication(beat, 'telegram', result.url) : beat))
   }
 
+  function applyYoutubeSchedule(entries: { url: string; publishAt: string | null; previous?: string }[]) {
+    const changes = new Map(entries.map((entry) => [entry.url, entry]))
+    setBeats((all) => all.map((beat) => {
+      const publications = getBeatPublications(beat)
+      const matched = publications.filter((post) => {
+        const change = changes.get(post.url)
+        return post.platform === 'youtube' && change && (change.previous === undefined || Date.parse(change.previous) === Date.parse(post.publishAt ?? ''))
+      })
+      if (!matched.length) return beat
+      const dates = new Map(matched.map((post) => [post.url, changes.get(post.url)!.publishAt]))
+      return { ...beat,
+        youtubePublishAt: dates.has(beat.youtubeLink) ? dates.get(beat.youtubeLink) : beat.youtubePublishAt,
+        publications: publications.map((post) => post.platform === 'youtube' && dates.has(post.url) ? { ...post, publishAt: dates.get(post.url) } : post),
+      }
+    }))
+  }
+
+  async function reconcileYoutubeSchedule(current: { url: string; publishAt: string }[]) {
+    if (!webApp?.initData) throw new Error('Открой XEINTY через Telegram.')
+    const results = await Promise.all(Array.from({length: Math.ceil(current.length / 200)}, (_, index) =>
+      refreshYoutubeSchedule(webApp.initData, current.slice(index * 200, index * 200 + 200).map(({url}) => url))))
+    const previous = new Map(current.map((entry) => [entry.url, entry.publishAt]))
+    const changes = results.flatMap(({entries}) => entries.filter((entry) => entry.publishAt === null ||
+      Date.parse(entry.publishAt) !== Date.parse(previous.get(entry.url) ?? '')).map((entry) => ({...entry, previous: previous.get(entry.url)})))
+    if (changes.length) applyYoutubeSchedule(changes)
+    return { changed: changes.length, unavailable: results.reduce((sum, result) => sum + result.unavailable, 0) }
+  }
+
   async function manageYoutubeSchedule(url: string, expectedPublishAt: string, publishAt: string | null) {
     if (!webApp?.initData) throw new Error('Открой XEINTY через Telegram.')
     const result = await changeYoutubeSchedule(webApp.initData, { beatId: selected.id, url, expectedPublishAt, publishAt })
     if (result.saved) {
-      setBeats((all) => all.map((beat) => {
-        const publications = getBeatPublications(beat)
-        if (!publications.some((post) => post.platform === 'youtube' && post.url === url)) return beat
-        return { ...beat,
-          youtubePublishAt: beat.youtubeLink === url ? result.publishAt : beat.youtubePublishAt,
-          publications: publications.map((post) => post.platform === 'youtube' && post.url === url ? { ...post, publishAt: result.publishAt } : post),
-        }
-      }))
+      applyYoutubeSchedule([{url, publishAt: result.publishAt}])
       youtubeStats.refresh()
       notify(result.changed ? (result.publishAt ? 'Выход перенесён' : 'Выход отменён') : 'Расписание сверено с YouTube. Проверь статус видео.')
     }
@@ -679,7 +700,7 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
               {publishModes.map(({id, label}) => <button key={id} role="tab" aria-selected={publishMode === id}
                 className={publishMode === id ? 'is-active' : undefined} onClick={() => setPublishMode(id)}>{label}</button>)}
             </div>
-            {publishMode === 'planned' && <PlannedReleases beats={beats}
+            {publishMode === 'planned' && <PlannedReleases beats={beats} refresh={cloudAvailable ? reconcileYoutubeSchedule : undefined}
               openRelease={(id, url) => {
                 const beat = beats.find((item) => item.id === id)
                 if (beat) openBeat(beat, 'publications', url)
