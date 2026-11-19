@@ -1,4 +1,4 @@
-import { joinTrackCaption, linkTrackCredits } from './telegram-caption.ts'
+import { captionWithLinks, renderTrackCaption } from './telegram-caption.ts'
 
 type Chat = { id: number; type: string; title?: string; username?: string }
 type Member = { status: string; can_post_messages?: boolean }
@@ -52,27 +52,8 @@ export async function channelForPublisher(address: string, userId: number): Prom
   return chat
 }
 
-function captionWithLinks(source: string) {
-  let caption = ''
-  let cursor = 0
-  const caption_entities: { type: 'text_link'; offset: number; length: number; url: string }[] = []
-  for (const match of source.matchAll(/\[([^\[\]\r\n]+)\]\((https?:\/\/[^\s()]+)\)/g)) {
-    const [token, label, address] = match
-    const start = match.index!
-    let url: URL
-    try { url = new URL(address) } catch { continue }
-    if (url.protocol !== 'https:' && url.protocol !== 'http:') continue
-    caption += source.slice(cursor, start)
-    caption_entities.push({ type: 'text_link', offset: caption.length, length: label.length, url: url.href })
-    caption += label
-    cursor = start + token.length
-  }
-  caption += source.slice(cursor)
-  return { caption, caption_entities: caption_entities.length ? caption_entities : undefined }
-}
-
 export async function postAudio(chat: Chat, tracks: { audio: string }[], caption: string, credits?: string[]): Promise<string> {
-  const trackCaption = (index: number) => captionWithLinks(joinTrackCaption(linkTrackCredits(credits?.[index] ?? ''), index === tracks.length - 1 ? caption : ''))
+  const trackCaption = (index: number) => renderTrackCaption(credits?.[index] ?? '', index === tracks.length - 1 ? caption : undefined)
   let first: Message
   if (tracks.length === 1) {
     first = await api<Message>('sendAudio', { chat_id: chat.id, ...tracks[0], ...trackCaption(0) })
