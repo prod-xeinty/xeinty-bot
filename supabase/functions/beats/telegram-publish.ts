@@ -47,13 +47,32 @@ export async function channelForPublisher(address: string, userId: number): Prom
   return chat
 }
 
+function captionWithLinks(source: string) {
+  let caption = ''
+  let cursor = 0
+  const caption_entities: { type: 'text_link'; offset: number; length: number; url: string }[] = []
+  for (const match of source.matchAll(/\[([^\[\]\r\n]+)\]\((https?:\/\/[^\s()]+)\)/g)) {
+    const [token, label, address] = match
+    const start = match.index!
+    let url: URL
+    try { url = new URL(address) } catch { continue }
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') continue
+    caption += source.slice(cursor, start)
+    caption_entities.push({ type: 'text_link', offset: caption.length, length: label.length, url: url.href })
+    caption += label
+    cursor = start + token.length
+  }
+  caption += source.slice(cursor)
+  return { caption, caption_entities: caption_entities.length ? caption_entities : undefined }
+}
+
 export async function postAudio(chat: Chat, tracks: { audio: string }[], caption: string): Promise<string> {
   let first: Message
   if (tracks.length === 1) {
-    first = await api<Message>('sendAudio', { chat_id: chat.id, ...tracks[0], caption })
+    first = await api<Message>('sendAudio', { chat_id: chat.id, ...tracks[0], ...captionWithLinks(caption) })
   } else {
     const media = tracks.map(({ audio }, index) => ({
-      type: 'audio', media: audio, caption: index === 0 ? caption : undefined,
+      type: 'audio', media: audio, ...(index === 0 ? captionWithLinks(caption) : {}),
     }))
     const messages = await api<Message[]>('sendMediaGroup', { chat_id: chat.id, media })
     first = messages[0]
@@ -64,13 +83,15 @@ export async function postAudio(chat: Chat, tracks: { audio: string }[], caption
 
 export async function postCover(chat: Chat, cover: string | File, caption: string) {
   if (typeof cover === 'string') {
-    await api('sendPhoto', { chat_id: chat.id, photo: cover, caption })
+    await api('sendPhoto', { chat_id: chat.id, photo: cover, ...captionWithLinks(caption) })
     return
   }
   const form = new FormData()
   form.set('chat_id', String(chat.id))
   form.set('photo', cover)
-  form.set('caption', caption)
+  const content = captionWithLinks(caption)
+  form.set('caption', content.caption)
+  if (content.caption_entities) form.set('caption_entities', JSON.stringify(content.caption_entities))
   await api('sendPhoto', form)
 }
 
