@@ -14,10 +14,10 @@ import { deleteStoredBeat, loadStoredBeats, saveBeatCover, saveBeatMetadata, sav
 import { changeYoutubeSchedule, refreshYoutubeSchedule, cloudConfigured, connectTelegramChannel, disconnectTelegramChannel, loadTelegramChannels, type TelegramChannel, type TelegramPublication, type PublicationLinks, createCloudBeat, deleteCloudBeat, loadCloudBeats, publishCloudTelegram, remoteFile, replaceCloudCover, updateCloudBeat } from './cloud-beats'
 import { normalizeMusicKey } from './music-key'
 import { Dropdown, KeyPicker } from './choice-menu'
-import { parseAudioName } from './filename'
+import { parseAudioName, telegramLine } from './filename'
 import { DirectTelegramPublication, readPublicationCover, OwnYoutubeVideo } from './publication'
 
-import { CaptionTemplates, CaptionTools, readCaptionPreferences, TelegramChannels, } from './telegram-settings'
+import { beatCaptionValues, CaptionTemplates, CaptionTools, readCaptionPreferences, TelegramChannels } from './telegram-settings'
 
 type Screen = 'library' | 'create' | 'publish' | 'channels' | 'more' | 'templates' | 'overview' | 'detail'
 type DetailTab = 'data' | 'publications'
@@ -281,8 +281,13 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
     })
   }
 
-  function captionTools(caption: string, onChange: (value: string) => void, youtube = false) {
-    return <CaptionTools caption={caption} onChange={onChange} preferences={captionPreferences} youtube={youtube} />
+  function captionTools(caption: string, onChange: (value: string) => void, platform: 'telegram' | 'youtube' | 'batch' = 'telegram') {
+    const values = platform === 'batch' ? { биты: [...batchBeats, ...batchFiles.map((file) => parseAudioName(file.name))].map((beat, index) => {
+      const fields = beatCaptionValues(beat)
+      const line = telegramLine({ title: fields.название || 'Без названия', bpm: fields.bpm ?? '', key: fields.тональность ?? '', tags: '' })
+      return (index + 1) + '. ' + line
+    }).join('\n') } : beatCaptionValues(selected)
+    return <CaptionTools caption={caption} onChange={onChange} preferences={captionPreferences} values={values} youtube={platform === "youtube"} />
   }
 
   async function addChannel(address: string) {
@@ -740,7 +745,7 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
               <div className="publication-grid">
                 <div className={`publication-card ${publicationPlatform === 'telegram' ? 'is-current' : ''}`}><div className="publication-card-head"><div className="platform-icon telegram-icon"><Send size={20} /></div><div><span>TELEGRAM</span><h3>Подпись к посту</h3></div></div><textarea aria-label="Подпись для Telegram" placeholder="Добавить подпись (необязательно)" value={selected.telegramCaption} maxLength={1024} onBlur={(e) => rememberHashtags(e.currentTarget.value)} onChange={(e) => updateBeat({ telegramCaption: e.target.value })} />{captionTools(selected.telegramCaption, (telegramCaption) => updateBeat({ telegramCaption }))}<label className="batch-cover-toggle"><input type="checkbox" checked={includeTelegramCover} onChange={(event) => toggleTelegramCover(event.target.checked)} /><span>Прикладывать обложку к посту</span></label>{cloudAvailable && selected.cloud && <DirectTelegramPublication channels={channels} initData={webApp?.initData ?? ''} onRecovered={applyTelegramResult} key={selected.id} publishedCount={selected.telegramLink.trim() ? 1 : 0} publish={(attemptId, channel, republish) => publishTelegram(attemptId, channel, [selected], selected.telegramCaption, undefined, includeTelegramCover, '', republish)} />}
                 </div>
-                <div className={`publication-card ${publicationPlatform === 'youtube' ? 'is-current' : ''}`}><div className="publication-card-head"><div className="platform-icon youtube-icon">▶</div><div><span>YOUTUBE</span><h3>Описание видео</h3></div></div><textarea aria-label="Описание для YouTube" placeholder="Описание (необязательно)" maxLength={5000} value={selected.youtubeDescription} onChange={(e) => updateBeat({ youtubeDescription: e.target.value })} />{captionTools(selected.youtubeDescription, (youtubeDescription) => updateBeat({ youtubeDescription }), true)}<label className="keywords-field"><span>КЛЮЧЕВЫЕ СЛОВА</span><input aria-label="Ключевые слова YouTube" value={selected.youtubeKeywords} onChange={(e) => updateBeat({ youtubeKeywords: e.target.value })} /></label>
+                <div className={`publication-card ${publicationPlatform === 'youtube' ? 'is-current' : ''}`}><div className="publication-card-head"><div className="platform-icon youtube-icon">▶</div><div><span>YOUTUBE</span><h3>Описание видео</h3></div></div><textarea aria-label="Описание для YouTube" placeholder="Описание (необязательно)" maxLength={5000} value={selected.youtubeDescription} onChange={(e) => updateBeat({ youtubeDescription: e.target.value })} />{captionTools(selected.youtubeDescription, (youtubeDescription) => updateBeat({ youtubeDescription }), 'youtube')}<label className="keywords-field"><span>КЛЮЧЕВЫЕ СЛОВА</span><input aria-label="Ключевые слова YouTube" value={selected.youtubeKeywords} onChange={(e) => updateBeat({ youtubeKeywords: e.target.value })} /></label>
 
               <div className="video-tool"><Dropdown label="Видео для YouTube" value={videoSource} onChange={(value) => setVideoSource(value === 'own' ? 'own' : 'generated')}
                   options={[{ value: 'generated', label: 'Собрать видео в XEINTY' }, { value: 'own', label: 'Приложить своё видео' }]} />
@@ -801,10 +806,10 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
               {includeTelegramCover && <label className="upload-zone"><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setBatchCoverFile(event.target.files?.[0] ?? null)} /><ImagePlus size={24} /><strong>{batchCoverFile?.name ?? 'Общая обложка'}</strong><span>Необязательно · JPG, PNG или WEBP</span></label>}
               {includeTelegramCover && batchCoverFile && <>
                 <label className="field"><span>Подпись к обложке</span><textarea className="batch-caption" maxLength={1024} value={batchCoverCaption} onBlur={(event) => rememberHashtags(event.currentTarget.value)} onChange={(event) => setBatchCoverCaption(event.target.value)} placeholder="Необязательно" /></label>
-                {captionTools(batchCoverCaption, setBatchCoverCaption)}
+                {captionTools(batchCoverCaption, setBatchCoverCaption, 'batch')}
               </>}
               <label className="field"><span>Подпись к аудио</span><textarea className="batch-caption" maxLength={1024} value={batchCaption} onBlur={(event) => rememberHashtags(event.currentTarget.value)} onChange={(event) => setBatchCaption(event.target.value)} placeholder="Необязательно" /></label>
-              {captionTools(batchCaption, setBatchCaption)}
+              {captionTools(batchCaption, setBatchCaption, 'batch')}
 
               {cloudAvailable && batchBeats.length > 0 && batchBeats.every((beat) => beat.cloud) && batchFiles.length === 0 &&
                 <DirectTelegramPublication channels={channels} initData={webApp?.initData ?? ''} onRecovered={applyTelegramResult} key={batchBeats.map((beat) => beat.id).sort().join(',')} publishedCount={batchBeats.filter((beat) => beat.telegramLink.trim()).length} publish={(attemptId, channel, republish) => publishTelegram(attemptId, channel, batchBeats, batchCaption, includeTelegramCover ? batchCoverFile ?? undefined : undefined, false, includeTelegramCover && batchCoverFile ? batchCoverCaption : '', republish)} />}

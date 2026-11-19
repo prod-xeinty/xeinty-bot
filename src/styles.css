@@ -768,3 +768,9 @@ input, textarea { caret-color: #fff; }
 .stats-ranking-controls .field { min-width: 0; }
 .stats-ranking-controls .beat-search input { min-height: 46px; }
 @media (max-width: 420px) { .stats-ranking-controls { grid-template-columns: minmax(0, 1fr); } }
+
+.caption-preview { display: grid; gap: 8px; min-width: 0; max-height: 320px; overflow: auto; padding: 12px 14px; border: 1px solid #ffffff25; border-radius: 12px; background: #141414; }
+.caption-preview h2 { margin: 0; color: #b8b8b8; font-size: 12px; font-weight: 650; }
+.caption-preview p { margin: 0; color: #f4f4f2; font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.caption-preview .caption-preview-link { text-decoration: underline; text-underline-offset: 3px; }
+.caption-tools > .form-hint { margin: 0; }
