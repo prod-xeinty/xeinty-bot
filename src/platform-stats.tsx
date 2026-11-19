@@ -89,7 +89,8 @@ export function StatsOverview({ platform, setPlatform, beats, state, openBeat, o
       <MetricCards platform={platform} metrics={result?.totals} />
       <div className="stats-coverage" role="status">
         {result && <span>Просмотры получены {platform === 'youtube' ? 'по видео' : 'по постам'} · {result.videosWithViews} из {result.linkedVideos}</span>}
-        {result?.unsupported && <span>Статистика Telegram доступна для публичных ссылок.</span>}
+        {result?.unsupported && <span>Некоторые ссылки ведут не на посты Telegram или указаны в неподдерживаемом формате.</span>}
+        {result?.restricted && <span>Для статистики закрытого канала подключи его во вкладке «Каналы» и проверь права администратора.</span>}
         <span>Прочерк означает, что данных нет. Счётчик сохранений пока недоступен.</span>
       </div>
       <StatsControls state={state} openChannels={openChannels} />
@@ -113,7 +114,9 @@ export function BeatPlatformStats({ beat, platform, state, openChannels }: {
     <h3>{platformNames[platform]}</h3>
     <MetricCards platform={platform} metrics={metrics} />
     {!beat.cloud && <p className="form-hint">Перенеси бит в облако, чтобы получать статистику.</p>}
-    {beat.cloud && state.stats && metrics?.views == null && <p className="form-hint">Площадка пока не вернула просмотры по этой ссылке.</p>}
+    {beat.cloud && state.stats && metrics?.views == null && <p className="form-hint">{metrics?.restricted
+          ? 'Проверь подключение закрытого канала и права администратора во вкладке «Каналы».'
+          : 'Площадка пока не вернула просмотры по этой ссылке.'}</p>}
     {beat.cloud && <StatsControls state={state} openChannels={openChannels} />}
   </section>
 }
