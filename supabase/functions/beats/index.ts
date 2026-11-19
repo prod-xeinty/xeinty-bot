@@ -1,6 +1,7 @@
+import { telegramPublication } from './telegram-attempts.ts'
 // Deploy with verify_jwt = false: Telegram initData is verified below on every request.
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { channelForPublisher, postAudio, postCover, readCover, telegramChannelProfile, TelegramPublishError } from './telegram-publish.ts'
+import { channelForPublisher, telegramChannelProfile, TelegramPublishError } from './telegram-publish.ts'
 
 import { youtubeAction, youtubeCallback } from './youtube.ts'
 
@@ -214,70 +215,9 @@ Deno.serve(async (request) => {
       return reply({ channel: { id: String(chat.id), title: chat.title || chat.username || String(chat.id), username: chat.username ?? null } }, 200, origin)
     }
 
-    if (action === 'publish-telegram') {
-      const ids: unknown = body.beatIds
-      const caption = text(body.caption, 1024)
-      const coverCaption = text(body.coverCaption ?? '', 1024)
-      const channel = text(body.channel, 40)?.trim()
-      if (!Array.isArray(ids) || ids.length < 1 || ids.length > 10 || new Set(ids).size !== ids.length ||
-          !ids.every((id) => typeof id === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id)) ||
-          caption === null || coverCaption === null || !channel || !/^-100[0-9]{5,16}$/.test(channel)) {
-        return reply({ error: 'Выбери канал и до 10 битов. Каждая подпись должна быть до 1024 символов.' }, 400, origin)
-      }
-      const { data, error } = await db.from('beats').select('id,audio_name,audio_path,cover_path,telegram_link')
-        .eq('telegram_user_id', userId).in('id', ids)
-      if (error) throw error
-      const ordered = ids.map((id) => data?.find((beat) => beat.id === id))
-      if (ordered.some((beat) => !beat?.audio_path)) {
-        return reply({ error: 'Для публикации нужны твои биты с MP3 в облаке' }, 404, origin)
-      }
-      if (body.republish !== true && ordered.some((beat) => beat?.telegram_link?.trim())) {
-        return reply({ error: 'В списке есть уже опубликованные биты. Подтверди «Опубликовать заново».' }, 409, origin)
-      }
-      const connected = await db.from('telegram_channels').select('chat_id')
-        .eq('telegram_user_id', userId).eq('chat_id', channel).maybeSingle()
-      if (connected.error) throw connected.error
-      if (!connected.data) return reply({ error: 'Подключи канал во вкладке «Каналы»' }, 403, origin)
-      const chat = await channelForPublisher(channel, userId)
-      const sign = async (path: string, download?: string) => {
-        const { data, error } = await db.storage.from(bucket).createSignedUrl(path, 600, download ? { download } : undefined)
-        if (error || !data?.signedUrl) throw new TelegramPublishError('Не удалось получить файл из облака.')
-        return data.signedUrl
-      }
-      let cover: string | File | undefined = readCover(body.cover)
-      if (!cover && body.useSavedCover === true && ordered.length === 1 && ordered[0]?.cover_path) {
-        cover = await sign(ordered[0].cover_path)
-      }
-      const tracks = await Promise.all(ordered.map(async (beat) => ({
-        audio: await sign(beat!.audio_path, beat!.audio_name || 'beat.mp3'),
-      })))
-      // Only the batch composer supplies its own cover file.
-      const batchCover = cover instanceof File ? cover : undefined
-      if (batchCover) await postCover(chat, batchCover, coverCaption)
-
-      let url: string
-      try {
-        url = await postAudio(chat, tracks, caption)
-      } catch (error) {
-        if (batchCover) {
-          throw new TelegramPublishError('Обложка отправлена. Не удалось подтвердить отправку аудио. Проверь канал перед повторной публикацией.')
-        }
-        throw error
-      }
-      const warnings: string[] = []
-      try {
-        const { error: saveError } = await db.from('beats').update({
-          telegram_link: url, updated_at: new Date().toISOString(),
-        }).eq('telegram_user_id', userId).in('id', ids)
-        if (saveError) warnings.push('Ссылка не сохранилась. Скопируй её из результата.')
-      } catch {
-        warnings.push('Ссылка не сохранилась. Скопируй её из результата.')
-      }
-      if (cover && !batchCover) {
-        try { await postCover(chat, cover, coverCaption) }
-        catch { warnings.push('Аудио опубликовано. Отправь обложку отдельно вручную.') }
-      }
-      return reply({ url, saved: !warnings.some((warning) => warning.startsWith('Ссылка')), warnings }, 200, origin)
+    if (action === 'publish-telegram' || (typeof action === 'string' && action.startsWith('telegram-publication-'))) {
+      const result = await telegramPublication(db, userId, body, bucket)
+      return reply(result.data, result.status ?? 200, origin)
     }
 
     if (action === 'prepare') {

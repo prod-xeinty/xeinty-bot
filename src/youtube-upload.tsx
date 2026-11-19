@@ -32,13 +32,13 @@ function encodeChunk(blob: Blob): Promise<string> {
 }
 
 function readSession(key: string) {
-  try { return sessionStorage.getItem(key) } catch { return null }
+  try { return localStorage.getItem(key) ?? sessionStorage.getItem(key) } catch { return null }
 }
 
 function storeSession(key: string, value: string | null) {
   try {
-    if (value) sessionStorage.setItem(key, value)
-    else sessionStorage.removeItem(key)
+    if (value) localStorage.setItem(key, value)
+    else { localStorage.removeItem(key); sessionStorage.removeItem(key) }
   } catch { /* Upload can still resume while this screen is open. */ }
 }
 
@@ -54,6 +54,7 @@ export function YoutubeUpload({ initData, beatId, video, fileKey, existingLink, 
   onNotice: (message: string) => void
 }) {
   const key = 'xeinty-youtube-upload:' + beatId + ':' + fileKey
+  const beatUploadKey = 'xeinty-youtube-pending:' + beatId
   const [connection, setConnection] = useState<YoutubeConnection>()
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState(0)
@@ -66,6 +67,7 @@ export function YoutubeUpload({ initData, beatId, video, fileKey, existingLink, 
   const [error, setError] = useState('')
   const request = useRef<AbortController>(null)
   const session = useRef(readSession(key))
+  const pending = useRef(readSession(beatUploadKey) ?? session.current)
   const connectionRevision = useRef(0)
 
   useEffect(() => {
@@ -85,9 +87,16 @@ export function YoutubeUpload({ initData, beatId, video, fileKey, existingLink, 
   const publishAt = result ? result.publishAt : existingPublishAt
   const actionLabel = scheduled ? 'Запланировать выход' : visibility === 'public' ? 'Опубликовать сейчас' : 'Загрузить видео'
 
+  function forgetUpload() {
+    session.current = null
+    pending.current = null
+    storeSession(key, null)
+    storeSession(beatUploadKey, null)
+  }
+
   async function upload(republish = false) {
-    if (!video || request.current || (alreadyPublished && !republish && !session.current)) return
-    const releaseTimestamp = scheduled && !session.current ? Date.parse(releaseTime) : undefined
+    if (request.current || (!video && !pending.current) || (alreadyPublished && !republish && !pending.current)) return
+    const releaseTimestamp = scheduled && !pending.current ? Date.parse(releaseTime) : undefined
     if (releaseTimestamp !== undefined && (!Number.isFinite(releaseTimestamp) || releaseTimestamp <= Date.now())) {
       setError('Укажи дату и время выхода в будущем.')
       return
@@ -97,24 +106,31 @@ export function YoutubeUpload({ initData, beatId, video, fileKey, existingLink, 
     setUploading(true)
     setConfirming(false)
     setError('')
-    const uploadId = session.current ?? crypto.randomUUID()
+    const uploadId = pending.current ?? crypto.randomUUID()
     setConfirmRepeat(false)
     setResult(undefined)
     setProgress(0)
     try {
-      await beforeStart()
-      if (controller.signal.aborted) return
-      await startYoutubeUpload(initData, {
-        uploadId, beatId, size: video.size, mimeType: video.type || 'application/octet-stream', madeForKids: false, republish, visibility,
-        publishAt: releaseTimestamp === undefined ? undefined : new Date(releaseTimestamp).toISOString(),
-      })
-      session.current = uploadId
-      storeSession(key, uploadId)
+      if (!pending.current && video) {
+        await beforeStart()
+        if (controller.signal.aborted) return
+        await startYoutubeUpload(initData, {
+          uploadId, beatId, size: video.size, mimeType: video.type || 'application/octet-stream', madeForKids: false, republish, visibility,
+          publishAt: releaseTimestamp === undefined ? undefined : new Date(releaseTimestamp).toISOString(),
+        })
+        session.current = uploadId
+        pending.current = uploadId
+        storeSession(key, uploadId)
+        storeSession(beatUploadKey, uploadId)
+      }
       let step: YoutubeUploadStep = await resumeYoutubeUpload(initData, uploadId, controller.signal)
       let confirmationChecks = 0
       while ('next' in step) {
         if (controller.signal.aborted) return
         const { next } = step
+        if (!video || session.current !== uploadId) {
+          throw new Error('Для продолжения выбери тот же файл видео. Если загрузка завершится, ссылку можно восстановить здесь.')
+        }
         setProgress(Math.min(99, Math.floor(next / video.size * 100)))
         if (next < 0 || next > video.size) throw new Error('YouTube вернул неверную позицию загрузки.')
         if (next === video.size) {
@@ -135,15 +151,13 @@ export function YoutubeUpload({ initData, beatId, video, fileKey, existingLink, 
       setResult(step)
       onNotice(step.saved ? (step.publishAt ? 'Выход видео запланирован' : 'Видео успешно загружено на YouTube') : 'Видео загружено, ссылка пока не сохранена')
       if (step.saved) {
-        session.current = null
-        storeSession(key, null)
+        forgetUpload()
         onSaved(step)
       }
     } catch (failure) {
       if (!controller.signal.aborted) {
-        if (failure instanceof Error && 'status' in failure && failure.status === 410) {
-          session.current = null
-          storeSession(key, null)
+        if (failure instanceof Error && 'status' in failure && (failure.status === 404 || failure.status === 410)) {
+          forgetUpload()
           setProgress(0)
         }
         setError(failure instanceof Error ? failure.message : 'Загрузка прервалась. Попробуй продолжить.')
@@ -161,7 +175,7 @@ export function YoutubeUpload({ initData, beatId, video, fileKey, existingLink, 
     {connection?.configured === false && <p className="form-hint">Подключение Google пока не настроено. Можно загрузить видео через YouTube Studio.</p>}
     {connection?.configured && !connection.connected && <p className="form-hint">Подключи YouTube во вкладке «Каналы», чтобы загружать видео напрямую.</p>}
     {connection?.connected && <>
-      {!session.current && (!alreadyPublished || confirmRepeat) && <div className="youtube-release-options">
+      {!pending.current && (!alreadyPublished || confirmRepeat) && <div className="youtube-release-options">
         <Dropdown label="Видимость" value={visibility} disabled={uploading || scheduled} options={visibilityOptions}
           onChange={(value) => setVisibility(value as YoutubeVisibility)} />
         <label className="batch-cover-toggle">
@@ -179,16 +193,16 @@ export function YoutubeUpload({ initData, beatId, video, fileKey, existingLink, 
           <small>Часовой пояс устройства · {Intl.DateTimeFormat().resolvedOptions().timeZone}</small>
         </label>}
       </div>}
-      {!video && <p className="form-hint">Собери видео или выбери файл с устройства.</p>}
-      {alreadyPublished && !uploading && !session.current ? <>
+      {!video && <p className="form-hint">{pending.current ? 'Можно проверить, принял ли YouTube видео.' : 'Собери видео или выбери файл с устройства.'}</p>}
+      {alreadyPublished && !uploading && !pending.current ? <>
         <p className="form-hint">{publishAt && Date.parse(publishAt) > Date.now() ? 'У бита уже запланирован выход на YouTube.' : 'У бита уже есть видео на YouTube.'}</p>
         {confirmRepeat ? <>
           <p className="form-hint">Загрузить новое видео для этого бита?</p>
           <button type="button" className="copy-button" disabled={!video} onClick={() => void upload(true)}>{scheduled ? 'Подтвердить запланированный выход' : 'Подтвердить повторную публикацию'}</button>
           <button type="button" className="copy-button copy-button--subtle" onClick={() => setConfirmRepeat(false)}>Отмена</button>
         </> : <button type="button" className="copy-button" disabled={!video} onClick={() => setConfirmRepeat(true)}>Опубликовать заново</button>}
-      </> : <button type="button" className="copy-button" disabled={!video || uploading} onClick={() => void upload()}>
-        {uploading ? confirming ? 'Ждём подтверждения YouTube…' : 'Загружаем…' : result ? 'Повторить сохранение ссылки' : session.current ? 'Продолжить загрузку' : actionLabel}
+      </> : <button type="button" className="copy-button" disabled={(!video && !pending.current) || uploading} onClick={() => void upload()}>
+        {uploading ? confirming ? 'Ждём подтверждения YouTube…' : 'Загружаем…' : result && !result.saved ? 'Повторить сохранение ссылки' : pending.current ? video && session.current === pending.current ? 'Продолжить загрузку' : 'Проверить загрузку' : actionLabel}
       </button>}
       {!result && (uploading || progress > 0) && <div className="youtube-upload-progress">
         <progress value={progress} max={100} aria-label="Прогресс загрузки" /><span>{progress}%</span>

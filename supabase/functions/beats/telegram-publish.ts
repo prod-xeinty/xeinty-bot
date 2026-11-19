@@ -2,11 +2,14 @@ type Chat = { id: number; type: string; title?: string; username?: string }
 type Member = { status: string; can_post_messages?: boolean }
 type Message = { message_id: number }
 
-export class TelegramPublishError extends Error {}
+export class TelegramPublishError extends Error {
+  constructor(message: string, readonly deliveryUnknown = false) { super(message) }
+}
 
 async function api<T>(method: string, payload: Record<string, unknown> | FormData): Promise<T> {
   const token = Deno.env.get('TELEGRAM_BOT_TOKEN')
   if (!token) throw new Error('TELEGRAM_BOT_TOKEN is missing')
+  const writing = ['sendAudio', 'sendMediaGroup', 'sendPhoto'].includes(method)
   const form = payload instanceof FormData
   let response: Response
   try {
@@ -18,14 +21,14 @@ async function api<T>(method: string, payload: Record<string, unknown> | FormDat
     })
   } catch {
     // Fetch errors can include the request URL and therefore the bot token.
-    throw new TelegramPublishError('Telegram не ответил. Проверь канал перед повторной отправкой.')
+    throw new TelegramPublishError('Telegram не ответил. Проверь канал перед повторной отправкой.', writing)
   }
   const result = await response.json().catch(() => null)
   if (!response.ok || !result?.ok) {
     if (method === 'getChat' || method === 'getChatMember') {
       throw new TelegramPublishError('Канал недоступен. Проверь его адрес и права бота.')
     }
-    throw new TelegramPublishError('Telegram отклонил отправку. Проверь права бота и доступность файлов.')
+    throw new TelegramPublishError('Telegram не подтвердил отправку. Проверь права бота и доступность файлов.', writing && (response.status >= 500 || result?.ok !== false))
   }
   return result.result as T
 }
@@ -76,6 +79,9 @@ export async function postAudio(chat: Chat, tracks: { audio: string }[], caption
     }))
     const messages = await api<Message[]>('sendMediaGroup', { chat_id: chat.id, media })
     first = messages[0]
+  }
+  if (!Number.isInteger(first?.message_id) || first.message_id < 1) {
+    throw new TelegramPublishError('Telegram не вернул номер поста. Проверь канал.', true)
   }
   const path = chat.username || `c/${String(chat.id).slice(4)}`
   return `https://t.me/${path}/${first.message_id}`
