@@ -404,7 +404,14 @@ function App() {
     else if (!updated.isDemo) void saveBeatMetadata(storedBeat(updated)).catch(() => notify('Изменения не сохранились на устройстве'))
   }
   async function createVideo() {
-    if (videoStage || (!selected.audioFile && !selected.audioUrl) || (!selected.coverFile && !selected.coverUrl)) return
+    if (videoStage) return
+    const hasAudio = Boolean(selected.audioFile || selected.audioUrl)
+    const hasCover = Boolean(selected.coverFile || selected.coverUrl)
+    if (!hasAudio || !hasCover) {
+      const missing = !hasAudio && !hasCover ? 'обложку и аудиофайл' : !hasCover ? 'обложку' : 'аудиофайл'
+      setVideoError('Для сборки MP4 добавь ' + missing + ' в карточке бита.')
+      return
+    }
     setVideoError('')
     setVideoStage('preparing')
     const started = performance.now()
@@ -581,7 +588,7 @@ function App() {
             <div className="page-heading"><div><h1>Публикация</h1><p>Выбери один бит или подготовь пачку для Telegram.</p></div></div>
             <div className="publish-mode" role="tablist" aria-label="Тип публикации" style={{ '--tab-i': publishMode === 'batch' ? 1 : 0 } as CSSProperties}><button role="tab" aria-selected={publishMode === 'single'} className={publishMode === 'single' ? 'is-active' : ''} onClick={() => setPublishMode('single')}>Один бит</button><button role="tab" aria-selected={publishMode === 'batch'} className={publishMode === 'batch' ? 'is-active' : ''} onClick={() => setPublishMode('batch')}>Пачка битов</button></div>
             {publishMode === 'single' && <div className="publish-stage" key="single">
-              {beats.some((beat) => !beat.isDemo) ? <div className="publish-beats" role="group" aria-label="Выбрать бит">{beats.filter((beat) => !beat.isDemo).map((beat, index) => <button style={staggerStyle(index)} key={beat.id} className={selected.id === beat.id ? 'is-active' : ''} onClick={() => setSelectedId(beat.id)}><Cover beat={beat} className="publish-beat-cover" /><span><strong>{beat.title}</strong><small>{beat.bpm} BPM · {beat.key}</small></span><Check size={16} className="publish-beat-check" /></button>)}</div> : <div className="publish-empty"><FileAudio2 size={25} /><strong>Пока нет своих битов</strong><p>Сначала добавь аудиофайл — затем здесь появятся тексты и сборка видео.</p><button className="outline-button" onClick={() => navigate('create')}>Добавить бит <ArrowRight size={17} /></button></div>}
+              {beats.some((beat) => !beat.isDemo) ? <div className="publish-beats" role="group" aria-label="Выбрать бит">{beats.filter((beat) => !beat.isDemo).map((beat, index) => <button style={staggerStyle(index)} key={beat.id} className={selected.id === beat.id ? 'is-active' : ''} onClick={() => { setSelectedId(beat.id); setVideoError('') }}><Cover beat={beat} className="publish-beat-cover" /><span><strong>{beat.title}</strong><small>{beat.bpm} BPM · {beat.key}</small></span><Check size={16} className="publish-beat-check" /></button>)}</div> : <div className="publish-empty"><FileAudio2 size={25} /><strong>Пока нет своих битов</strong><p>Сначала добавь аудиофайл — затем здесь появятся тексты и сборка видео.</p><button className="outline-button" onClick={() => navigate('create')}>Добавить бит <ArrowRight size={17} /></button></div>}
               {!selected.isDemo && <div className="detail-section">
               <div className="section-intro"><h2>Для площадок</h2><p>Подстрой тексты и подготовь видео для выбранного бита.</p></div>
                 <div className="platform-switch" role="tablist" aria-label="Площадка" style={{ '--tab-i': publicationPlatform === 'youtube' ? 1 : 0 } as CSSProperties}><button role="tab" aria-selected={publicationPlatform === 'telegram'} className={publicationPlatform === 'telegram' ? 'is-active' : ''} onClick={() => setPublicationPlatform('telegram')}>Telegram</button><button role="tab" aria-selected={publicationPlatform === 'youtube'} className={publicationPlatform === 'youtube' ? 'is-active' : ''} onClick={() => setPublicationPlatform('youtube')}>YouTube</button></div>
@@ -593,12 +600,10 @@ function App() {
               <div className="video-tool"><Dropdown label="Видео для YouTube" value={videoSource} onChange={(value) => setVideoSource(value === 'own' ? 'own' : 'generated')}
                   options={[{ value: 'generated', label: 'Собрать видео в XEINTY' }, { value: 'own', label: 'Приложить своё видео' }]} />
                 {videoSource === 'own' ? <OwnYoutubeVideo key={selected.id} file={selectedOwnVideo} onChange={(file) => setOwnVideo(file ? { beatId: selected.id, file } : undefined)} /> : <>
-                {(selected.audioFile || selected.audioUrl) && (selected.coverFile || selected.coverUrl) ? <>
-                  <button className="primary-button video-action" onClick={createVideo} disabled={videoStage !== null}>{videoStage ? 'Сборка идёт…' : 'Собрать MP4'} {!videoStage && <ArrowRight size={18} />}</button>
+                  <button className="primary-button video-action" type="button" onClick={createVideo} disabled={videoStage !== null}>{videoStage ? 'Сборка идёт…' : 'Собрать MP4'} {!videoStage && <ArrowRight size={18} />}</button>
                   {videoStage && <p className="video-status" role="status">{videoStage === 'loading' ? 'Загружаем видеодвижок — около 31 МБ…' : videoStage === 'preparing' ? 'Подготавливаем файлы…' : 'Собираем видео. Не закрывай Telegram…'}</p>}
                   {videoError && <p className="video-error" role="alert">{videoError}</p>}
                   {videoResult?.beatId === selected.id && <div className="video-result"><video src={videoResult.url} controls playsInline preload="metadata" aria-label={`Готовое видео ${selected.title}`} /><p>MP4 · {(videoResult.size / 1024 / 1024).toFixed(1)} МБ · сборка {videoResult.seconds} с</p><div className="video-save-actions"><button className="video-download" onClick={saveVideo}><Download size={17} /> Сохранить MP4</button><a className="video-download video-download--secondary" href={videoResult.url} download={`${selected.title.replace(/[^a-z0-9а-яё-]+/gi, '-').toLowerCase()}.mp4`}>Обычная загрузка</a><a className="video-download" href="https://studio.youtube.com/" target="_blank" rel="noreferrer">Открыть YouTube Studio <ExternalLink size={16} /></a></div><p>Загрузи сохранённый MP4 в Studio. Studio откроется отдельно от XEINTY.</p></div>}
-                </> : <p className="video-hint">Для сборки MP4 нужны обложка и MP3 или WAV.</p>}
                 </>}
               </div>
               {cloudAvailable && selected.cloud && webApp?.initData && <YoutubeUpload
