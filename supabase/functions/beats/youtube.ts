@@ -81,7 +81,7 @@ export async function youtubeCallback(db: SupabaseClient, request: Request) {
 }
 
 type Result = { data: object; status?: number }
-type Upload = { id: string; beat_id: string; session_url: string; access_token: string; file_size: number; mime_type: string; video_id: string | null }
+type Upload = { id: string; beat_id: string; session_url: string; access_token: string; file_size: number; mime_type: string; video_id: string | null; publish_at: string | null }
 
 function uploadUrl(value: string) {
   const url = new URL(value)
@@ -106,10 +106,11 @@ async function finishUpload(db: SupabaseClient, userId: number, upload: Upload, 
     .eq('id', upload.id).eq('telegram_user_id', userId)
   if (recorded.error) throw recorded.error
   const url = 'https://youtu.be/' + videoId
-  const saved = await db.from('beats').update({ youtube_link: url, updated_at: new Date().toISOString() })
+  const publishAt = upload.publish_at
+  const saved = await db.from('beats').update({ youtube_link: url, youtube_publish_at: publishAt, updated_at: new Date().toISOString() })
     .eq('id', upload.beat_id).eq('telegram_user_id', userId).select('id').maybeSingle()
-  if (saved.error || !saved.data) return { data: { url, saved: false } }
-  return { data: { url, saved: true } }
+  if (saved.error || !saved.data) return { data: { url, publishAt, saved: false } }
+  return { data: { url, publishAt, saved: true } }
 }
 
 export async function youtubeAction(db: SupabaseClient, userId: number, body: Record<string, unknown>): Promise<Result> {
@@ -181,6 +182,19 @@ export async function youtubeAction(db: SupabaseClient, userId: number, body: Re
     if (action === 'youtube-start') {
       if (upload) return { data: { ready: true } }
       const { beatId, size, mimeType, madeForKids } = body
+      // Older clients only offer a private upload.
+      const visibility = body.visibility === undefined ? 'private' : body.visibility
+      if (visibility !== 'public' && visibility !== 'unlisted' && visibility !== 'private') {
+        throw new YoutubeError('Выбери видимость видео.')
+      }
+      let publishAt: string | null = null
+      if (body.publishAt !== undefined) {
+        const time = typeof body.publishAt === 'string' ? Date.parse(body.publishAt) : NaN
+        if (visibility !== 'public' || !Number.isFinite(time) || time <= Date.now()) {
+          throw new YoutubeError('Для запланированного выхода укажи дату и время в будущем.')
+        }
+        publishAt = new Date(time).toISOString()
+      }
       if (typeof beatId !== 'string' || !uuid.test(beatId) || typeof size !== 'number' || !Number.isSafeInteger(size) || size < 1 ||
           size > maxVideoSize || typeof mimeType !== 'string' || !/^(video\/[\w.+-]+|application\/octet-stream)$/.test(mimeType) ||
           typeof madeForKids !== 'boolean') throw new YoutubeError('Проверь файл и выбери аудиторию видео.')
@@ -205,7 +219,11 @@ export async function youtubeAction(db: SupabaseClient, userId: number, body: Re
         headers: { Authorization: 'Bearer ' + access, 'Content-Type': 'application/json', 'X-Upload-Content-Length': String(size), 'X-Upload-Content-Type': mimeType },
         body: JSON.stringify({
           snippet: { title: beat.title, description: beat.youtube_description, tags, categoryId: '10' },
-          status: { privacyStatus: 'private', selfDeclaredMadeForKids: madeForKids },
+          status: {
+            privacyStatus: publishAt ? 'private' : visibility,
+            ...(publishAt ? { publishAt } : {}),
+            selfDeclaredMadeForKids: madeForKids,
+          },
         }),
         signal: AbortSignal.timeout(25_000),
       })
@@ -216,7 +234,7 @@ export async function youtubeAction(db: SupabaseClient, userId: number, body: Re
       const inserted = await db.from('youtube_uploads').insert({
         id: body.uploadId, telegram_user_id: userId, beat_id: beatId, session_url: uploadUrl(location).href,
         access_token: await encrypt(access, cfg.key, userId), expires_at: new Date(Date.now() + 24 * 60 * 60_000).toISOString(),
-        file_size: size, mime_type: mimeType,
+        file_size: size, mime_type: mimeType, publish_at: publishAt,
       })
       if (inserted.error) throw inserted.error
       return { data: { ready: true } }

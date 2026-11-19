@@ -12,6 +12,7 @@ export type StoredBeat = {
   youtubeKeywords: string
   telegramLink: string
   youtubeLink: string
+  youtubePublishAt?: string | null
 }
 
 type StoredFiles = { id: string; audioFile?: File; coverFile?: File }

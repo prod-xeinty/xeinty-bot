@@ -124,7 +124,9 @@ export async function disconnectTelegramChannel(initData: string, channel: strin
 }
 
 export type YoutubeConnection = { configured: boolean; connected: boolean }
-export type YoutubeUploadStep = { next: number } | { url: string; saved: boolean }
+export type YoutubeVisibility = 'public' | 'private' | 'unlisted'
+export type YoutubeUploadResult = { url: string; saved: boolean; publishAt?: string | null }
+export type YoutubeUploadStep = { next: number } | YoutubeUploadResult
 
 export function youtubeConnection(initData: string) {
   return call<YoutubeConnection>(initData, 'youtube-status')
@@ -140,6 +142,7 @@ export function disconnectYoutube(initData: string) {
 
 export function startYoutubeUpload(initData: string, payload: {
   uploadId: string; beatId: string; size: number; mimeType: string; madeForKids: boolean; republish?: boolean
+  visibility: YoutubeVisibility; publishAt?: string
 }) {
   return call<{ ready: boolean }>(initData, 'youtube-start', payload)
 }

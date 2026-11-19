@@ -157,7 +157,7 @@ Deno.serve(async (request) => {
           coverUrl: cover.data?.signedUrl,
           telegramCaption: beat.telegram_caption, youtubeDescription: beat.youtube_description,
           youtubeKeywords: beat.youtube_keywords, telegramLink: beat.telegram_link,
-          youtubeLink: beat.youtube_link,
+          youtubeLink: beat.youtube_link, youtubePublishAt: beat.youtube_publish_at,
         }
       }))
       return reply({ beats }, 200, origin)
@@ -343,7 +343,7 @@ Deno.serve(async (request) => {
       const { data, error } = await db.from('beats').update({
         ...metadata,
         ...(typeof links?.telegramLink === 'string' ? { telegram_link } : {}),
-        ...(typeof links?.youtubeLink === 'string' ? { youtube_link } : {}),
+        ...(typeof links?.youtubeLink === 'string' ? { youtube_link, youtube_publish_at: null } : {}),
       }).eq('id', body.id).eq('telegram_user_id', userId).select('id').maybeSingle()
       if (error) throw error
       return data ? reply({ ok: true }, 200, origin) : reply({ error: 'Бит не найден' }, 404, origin)

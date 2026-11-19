@@ -622,6 +622,9 @@ input, textarea { caret-color: #fff; }
 
 .youtube-upload h3 { margin: 0 0 10px; font-size: 14px; }
 .youtube-upload .video-download { margin-top: 10px; }
+.youtube-release-options { display: grid; gap: 12px; max-width: 360px; margin-bottom: 12px; }
+.youtube-release-options input[type="datetime-local"] { min-width: 0; color-scheme: dark; }
+.youtube-release-options small { color: #aaa; }
 .youtube-upload-progress { display: flex; align-items: center; gap: 10px; margin-top: 12px; color: #ddd; font-size: 12px; }
 .youtube-upload-progress progress { flex: 1; min-width: 0; height: 7px; accent-color: #ddd; }
 
