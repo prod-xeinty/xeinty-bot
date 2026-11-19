@@ -2,6 +2,7 @@ import type { SupabaseClient } from 'npm:@supabase/supabase-js@2'
 import { dailyViews, publicationLinks } from './publication-history.ts'
 
 const scope = 'https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly'
+const scheduleScope = 'https://www.googleapis.com/auth/youtube.force-ssl'
 const chunkSize = 2 * 1024 * 1024
 const maxVideoSize = 256 * 1024 * 1024 * 1024
 const videoIdPattern = /^[a-zA-Z0-9_-]{11}$/
@@ -49,7 +50,7 @@ async function token(cfg: NonNullable<ReturnType<typeof config>>, grant: Record<
   if (!response.ok || typeof result?.access_token !== 'string') {
     throw new YoutubeError('Не удалось авторизовать YouTube. Попробуй подключить аккаунт заново.')
   }
-  return result as { access_token: string; refresh_token?: string; expires_in?: number }
+  return result as { access_token: string; refresh_token?: string; expires_in?: number; scope?: string }
 }
 
 function callbackPage(message: string, status = 200) {
@@ -73,7 +74,7 @@ export async function youtubeCallback(db: SupabaseClient, request: Request) {
     const credentials = await token(cfg, { grant_type: 'authorization_code', code, redirect_uri: cfg.redirect })
     if (!credentials.refresh_token) return callbackPage('Google не выдал доступ для загрузок. Подключи аккаунт заново.', 400)
     const saved = await db.from('youtube_connections').upsert({
-      telegram_user_id: userId, refresh_token: await encrypt(credentials.refresh_token, cfg.key, userId),
+      telegram_user_id: userId, refresh_token: await encrypt(credentials.refresh_token, cfg.key, userId), granted_scopes: credentials.scope ?? null,
     })
     if (saved.error) throw saved.error
     return callbackPage('YouTube подключён. Вернись в XEINTY и нажми «Проверить подключение».')
@@ -94,12 +95,21 @@ function uploadUrl(value: string) {
   return url
 }
 
-async function accessToken(db: SupabaseClient, userId: number, cfg: NonNullable<ReturnType<typeof config>>) {
-  const { data, error } = await db.from('youtube_connections').select('refresh_token').eq('telegram_user_id', userId).maybeSingle()
+async function accessCredentials(db: SupabaseClient, userId: number, cfg: NonNullable<ReturnType<typeof config>>) {
+  const { data, error } = await db.from('youtube_connections').select('refresh_token,granted_scopes').eq('telegram_user_id', userId).maybeSingle()
   if (error) throw error
   if (!data) throw new YoutubeError('Сначала подключи YouTube.')
   const refreshToken = await decrypt(data.refresh_token, cfg.key, userId)
-  return (await token(cfg, { grant_type: 'refresh_token', refresh_token: refreshToken })).access_token
+  const credentials = await token(cfg, { grant_type: 'refresh_token', refresh_token: refreshToken })
+  return { access: credentials.access_token, scopes: credentials.scope ?? data.granted_scopes ?? '' }
+}
+
+async function accessToken(db: SupabaseClient, userId: number, cfg: NonNullable<ReturnType<typeof config>>) {
+  return (await accessCredentials(db, userId, cfg)).access
+}
+
+function canManageSchedule(scopes: string) {
+  return scopes.split(/\s+/).some((item) => [scheduleScope, 'https://www.googleapis.com/auth/youtube', 'https://www.googleapis.com/auth/youtubepartner'].includes(item))
 }
 
 function linkedVideoId(link: string): string | null {
@@ -115,6 +125,75 @@ function linkedVideoId(link: string): string | null {
     if (path.length === 2 && ['shorts', 'live', 'embed'].includes(path[0])) id = path[1]
   }
   return id && videoIdPattern.test(id) ? id : null
+}
+
+type VideoStatus = { privacyStatus?: string; publishAt?: string; embeddable?: boolean; license?: string;
+  publicStatsViewable?: boolean; selfDeclaredMadeForKids?: boolean; containsSyntheticMedia?: boolean }
+
+function scheduledTime(status?: VideoStatus) {
+  const time = Date.parse(status?.publishAt ?? '')
+  return status?.privacyStatus === 'private' && Number.isFinite(time) ? new Date(time).toISOString() : null
+}
+
+async function changeSchedule(db: SupabaseClient, owner: number, cfg: NonNullable<ReturnType<typeof config>>, body: Record<string, unknown>): Promise<Result> {
+  const { beatId, url, expectedPublishAt, publishAt } = body
+  const videoId = typeof url === 'string' ? linkedVideoId(url) : null
+  if (typeof beatId !== 'string' || !uuid.test(beatId) || !videoId || url !== 'https://youtu.be/' + videoId ||
+      typeof expectedPublishAt !== 'string' || !Number.isFinite(Date.parse(expectedPublishAt)) ||
+      (publishAt !== null && (typeof publishAt !== 'string' || !Number.isFinite(Date.parse(publishAt))))) {
+    throw new YoutubeError('Выбери запланированное видео и укажи корректное время.')
+  }
+  const expected = new Date(expectedPublishAt).toISOString()
+  const desired = typeof publishAt === 'string' ? new Date(publishAt).toISOString() : null
+  if (desired && Date.parse(desired) <= Date.now() + 15_000) throw new YoutubeError('Выбери время выхода позже текущего.')
+
+  const { data: beat, error: beatError } = await db.from('beats').select('id').eq('id', beatId).eq('telegram_user_id', owner).maybeSingle()
+  if (beatError) throw beatError
+  if (!beat) throw new YoutubeError('Бит не найден.', 404)
+  const { data: publication, error } = await db.from('beat_publications').select('publish_at')
+    .eq('beat_id', beatId).eq('platform', 'youtube').eq('url', url).maybeSingle()
+  if (error) throw error
+  if (!publication) throw new YoutubeError('Публикация не найдена.', 404)
+  const { access, scopes } = await accessCredentials(db, owner, cfg)
+  if (scopes && !canManageSchedule(scopes)) throw new YoutubeError('Разреши управление расписанием YouTube во вкладке «Каналы».', 403)
+  const headers: Record<string, string> = { Authorization: 'Bearer ' + access }
+  const statusUrl = 'https://www.googleapis.com/youtube/v3/videos?part=status'
+  const before = await fetch(statusUrl + '&id=' + videoId, {headers, signal: AbortSignal.timeout(10_000)})
+  if (!before.ok) throw new YoutubeError('Не удалось проверить расписание на YouTube.', 502)
+  const selected = (await before.json() as {items?: {id: string; etag?: string; status?: VideoStatus}[]}).items?.find((item) => item.id === videoId)
+  const status = selected?.status
+  if (!status) throw new YoutubeError('Видео недоступно подключённому каналу YouTube.', 404)
+  const actual = scheduledTime(status)
+
+  async function sync(date: string | null, changed: boolean) {
+    const saved = await db.rpc('sync_youtube_schedule', {p_owner: owner, p_video_id: videoId, p_publish_at: date})
+    return { data: { publishAt: date, changed, saved: !saved.error } }
+  }
+
+  if (actual === desired) return sync(actual, status.privacyStatus === 'private')
+  if (!actual || actual !== expected || !publication.publish_at || Date.parse(publication.publish_at) !== Date.parse(expected)) {
+    return sync(actual, false)
+  }
+  if (Date.parse(actual) <= Date.now() + 15_000 || (desired && Date.parse(desired) <= Date.now() + 15_000)) {
+    throw new YoutubeError('До выхода осталось слишком мало времени, чтобы безопасно изменить расписание.', 409)
+  }
+  const { embeddable, license, publicStatsViewable, selfDeclaredMadeForKids, containsSyntheticMedia } = status
+  if (selected?.etag) headers['If-Match'] = selected.etag.startsWith('"') ? selected.etag : '"' + selected.etag + '"'
+  const updated = await fetch(statusUrl, {
+    method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({id: videoId, status: {
+      privacyStatus: 'private', embeddable, license, publicStatsViewable, selfDeclaredMadeForKids, containsSyntheticMedia,
+      ...(desired ? {publishAt: desired} : {}),
+    }}),
+    signal: AbortSignal.timeout(10_000),
+  })
+  if (updated.status === 403) throw new YoutubeError('Проверь разрешение на управление расписанием и доступ к видео.', 403)
+  if (updated.status === 412) throw new YoutubeError('Видео изменилось на YouTube. Проверь расписание и повтори действие.', 409)
+  if (!updated.ok) throw new YoutubeError('YouTube не подтвердил изменение расписания. Проверь время и повтори попытку.', 502)
+  const result = await updated.json() as {id?: string; status?: VideoStatus}
+  if (result.id !== videoId || !result.status) throw new YoutubeError('YouTube не подтвердил новый статус видео. Повтори проверку.', 502)
+  const confirmed = scheduledTime(result.status)
+  return sync(confirmed, result.status.privacyStatus === 'private' && confirmed === desired)
 }
 
 async function youtubeStats(db: SupabaseClient, userId: number, cfg: NonNullable<ReturnType<typeof config>>): Promise<Result> {
@@ -185,8 +264,10 @@ export async function youtubeAction(db: SupabaseClient, userId: number, body: Re
   try {
     if (action === 'youtube-stats') return await youtubeStats(db, userId, cfg)
 
+    if (action === 'youtube-schedule') return await changeSchedule(db, userId, cfg, body)
+
     if (action === 'youtube-profile') {
-      const access = await accessToken(db, userId, cfg)
+      const { access, scopes } = await accessCredentials(db, userId, cfg)
       const response = await fetch('https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&mine=true', {
         headers: { Authorization: 'Bearer ' + access }, signal: AbortSignal.timeout(10_000),
       })
@@ -199,9 +280,10 @@ export async function youtubeAction(db: SupabaseClient, userId: number, body: Re
       }
       if (!response.ok) throw new YoutubeError('Не удалось получить данные канала YouTube.', 502)
       const channel = (await response.json()).items?.[0]
-      if (!channel) return { data: { needsAccess: false } }
+      if (!channel) return { data: { needsAccess: false, canManageSchedule: canManageSchedule(scopes) } }
       const count = channel.statistics?.subscriberCount
       return { data: {
+        canManageSchedule: canManageSchedule(scopes),
         title: channel.snippet?.title,
         username: channel.snippet?.customUrl,
         avatar: channel.snippet?.thumbnails?.default?.url,
@@ -218,7 +300,8 @@ export async function youtubeAction(db: SupabaseClient, userId: number, body: Re
       const link = new URL('https://accounts.google.com/o/oauth2/v2/auth')
       link.search = new URLSearchParams({
         client_id: cfg.clientId, redirect_uri: cfg.redirect, response_type: 'code',
-        scope, state, access_type: 'offline', prompt: 'consent select_account',
+        scope: body.manageSchedule === true ? scope + ' ' + scheduleScope : scope,
+        state, access_type: 'offline', prompt: 'consent select_account', include_granted_scopes: 'true',
       }).toString()
       return { data: { url: link.href } }
     }

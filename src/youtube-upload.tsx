@@ -224,6 +224,7 @@ export function YoutubeChannelSettings({ initData, openLink }: { initData?: stri
   const [profile, setProfile] = useState<ChannelProfile>()
   const [profileLoading, setProfileLoading] = useState(false)
   const [authUrl, setAuthUrl] = useState('')
+  const [requestingSchedule, setRequestingSchedule] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -259,7 +260,7 @@ export function YoutubeChannelSettings({ initData, openLink }: { initData?: stri
       if (!status.connected) return
       const updated = await loadYoutubeChannelProfile(session)
       setProfile(updated)
-      if (!updated.needsAccess) setAuthUrl('')
+      if (!updated.needsAccess && (!requestingSchedule || updated.canManageSchedule)) setAuthUrl('')
     })
   }
 
@@ -275,8 +276,14 @@ export function YoutubeChannelSettings({ initData, openLink }: { initData?: stri
     {needsAccess && <p className="form-hint">Обнови доступ Google, чтобы увидеть профиль канала и количество подписчиков.</p>}
     <div className="youtube-channel-actions">
       {(needsConnection || needsAccess) && <button type="button" className="outline-button" disabled={busy} onClick={() => void run(async (session) => {
+        setRequestingSchedule(false)
         setAuthUrl((await createYoutubeConnection(session)).url)
       })}>{needsAccess ? 'Обновить доступ' : 'Подключить YouTube'}</button>}
+      {connection?.connected && !profileLoading && !profile?.canManageSchedule && <button type="button" className="outline-button"
+        disabled={busy} onClick={() => void run(async (session) => {
+          setRequestingSchedule(true)
+          setAuthUrl((await createYoutubeConnection(session, true)).url)
+        })}>Разрешить управление расписанием</button>}
       {(needsConnection || authUrl || (initData && error)) && <button type="button" className="outline-button" disabled={busy} onClick={() => void refresh()}>Проверить подключение</button>}
       {connection?.connected && <button type="button" className="outline-button" disabled={busy || profileLoading} onClick={() => void run(async (session) => {
         await disconnectYoutube(session)
