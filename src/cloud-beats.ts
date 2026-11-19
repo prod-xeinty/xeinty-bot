@@ -106,13 +106,14 @@ export function loadTelegramChannelProfile(initData: string, channel: string) {
 export type StatsPlatform = 'youtube' | 'telegram'
 export type PostMetrics = { views: number | null; likes?: number | null; reactions?: number | null; comments?: number | null; forwards?: number | null; saves?: number | null }
 export type PlatformStats = {
-  entries: (PostMetrics & { beatId: string; link: string; restricted?: boolean })[]
+  entries: (PostMetrics & { beatId: string; link: string; restricted?: boolean; mediaKey?: string | null; channel?: string; visibility?: string })[]
   totals: PostMetrics
   videosWithViews: number
   linkedVideos: number
   unsupported?: boolean
   restricted?: boolean
   fetchedAt: string
+  series?: { day: string; views: number }[] | null
 }
 
 export function loadPlatformStats(initData: string, platform: StatsPlatform, signal: AbortSignal) {

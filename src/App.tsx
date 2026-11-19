@@ -1,4 +1,5 @@
-import { YoutubeChannelSettings, YoutubeReleaseTime, YoutubeUpload } from './youtube-upload'
+import { YoutubeChannelSettings, YoutubeUpload } from './youtube-upload'
+import { getBeatPublications, PublicationHistory, rememberPublication } from './publication-history'
 import { usePlatformStats, BeatPlatformStats, StatsOverview } from './platform-stats'
 import xeintyLogo from './assets/xeinty-logo.png'
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
@@ -17,7 +18,7 @@ import { DirectTelegramPublication, readPublicationCover, OwnYoutubeVideo } from
 import { CaptionTemplates, CaptionTools, readCaptionPreferences, TelegramChannels, } from './telegram-settings'
 
 type Screen = 'library' | 'create' | 'publish' | 'channels' | 'more' | 'templates' | 'overview' | 'detail'
-type DetailTab = 'data' | 'stats'
+type DetailTab = 'data' | 'stats' | 'publications'
 type Beat = Omit<StoredBeat, 'createdAt'> & {
   createdAt?: number; cover: number; coverUrl?: string; audioUrl?: string; audioFile?: File; coverFile?: File; isDemo?: boolean; cloud?: boolean
 }
@@ -116,13 +117,14 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
   const batchBeats = batchSelectedIds.flatMap((id) => savedAudioBeats.filter((beat) => beat.id === id))
   const cloudAvailable = cloudConfigured() && Boolean(webApp?.initData)
   const [statsPlatform, setStatsPlatform] = useState<'youtube' | 'telegram'>('youtube')
-  const statsView = (platform: typeof statsPlatform, link: 'youtubeLink' | 'telegramLink') => {
-    if (screen === 'overview' && statsPlatform === platform && beats.some((beat) => beat.cloud && beat[link].trim())) return 'overview'
-    if (screen === 'detail' && tab === 'stats' && selected.cloud && selected[link].trim()) return selected.id
+  const statsView = (platform: typeof statsPlatform) => {
+    const hasPublication = (beat: Beat) => beat.cloud && getBeatPublications(beat).some((post) => post.platform === platform)
+    if (screen === 'overview' && statsPlatform === platform && beats.some(hasPublication)) return 'overview'
+    if (screen === 'detail' && (tab === 'stats' || tab === 'publications') && hasPublication(selected)) return selected.id
   }
   const statsSession = cloudAvailable ? webApp?.initData : undefined
-  const youtubeStats = usePlatformStats('youtube', statsSession, statsView('youtube', 'youtubeLink'))
-  const telegramStats = usePlatformStats('telegram', statsSession, statsView('telegram', 'telegramLink'))
+  const youtubeStats = usePlatformStats('youtube', statsSession, statsView('youtube'))
+  const telegramStats = usePlatformStats('telegram', statsSession, statsView('telegram'))
 
   useEffect(() => {
     if (!cloudAvailable || !webApp?.initData) return
@@ -419,8 +421,20 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
       channel, beatIds, caption, useSavedCover, coverCaption, republish, cover: cover ? await readPublicationCover(cover) : undefined,
     })
     rememberHashtags(caption, coverCaption)
-    if (result.saved) setBeats((all) => all.map((beat) => beatIds.includes(beat.id) ? { ...beat, telegramLink: result.url } : beat))
+    if (result.saved) setBeats((all) => all.map((beat) => beatIds.includes(beat.id) ? rememberPublication(beat, 'telegram', result.url) : beat))
     return result
+  }
+
+  async function savePublicationLink(platform: 'telegram' | 'youtube', url: string) {
+    const id = selected.id
+    const updated = rememberPublication(selected, platform, url)
+    window.clearTimeout(cloudSaveTimersRef.current.get(id))
+    cloudSaveTimersRef.current.delete(id)
+    const links = platform === 'telegram' ? { telegramLink: url } : { youtubeLink: url }
+    await persistBeat(updated, links)
+    setBeats((all) => all.map((beat) => beat.id === id ? rememberPublication(beat, platform, url) : beat))
+    if (platform === 'telegram') telegramStats.refresh()
+    else youtubeStats.refresh()
   }
 
   function updateBeat(patch: Partial<Beat>) {
@@ -429,12 +443,6 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
     if (updated.cloud && webApp?.initData) {
       const existing = cloudSaveTimersRef.current.get(updated.id)
       if (existing) window.clearTimeout(existing)
-      const publicationLinks = { telegramLink: patch.telegramLink, youtubeLink: patch.youtubeLink }
-      if (publicationLinks.telegramLink !== undefined || publicationLinks.youtubeLink !== undefined) {
-        cloudSaveTimersRef.current.delete(updated.id)
-        void persistBeat(updated, publicationLinks).catch(() => notify('Ссылка не сохранилась в облаке'))
-        return
-      }
       const timer = window.setTimeout(() => {
         cloudSaveTimersRef.current.delete(updated.id)
         void persistBeat(updated).catch(() => notify('Изменения не сохранились в облаке'))
@@ -666,7 +674,7 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
                   await persistBeat(selected)
                 }}
                 onNotice={notify}
-                onSaved={({ url, publishAt }) => setBeats((all) => all.map((beat) => beat.id === selected.id ? { ...beat, youtubeLink: url, youtubePublishAt: publishAt } : beat))} />}
+                onSaved={({ url, publishAt }) => setBeats((all) => all.map((beat) => beat.id === selected.id ? rememberPublication(beat, 'youtube', url, publishAt) : beat))} />}
               {cloudAvailable && !selected.cloud && <p className="form-hint">Чтобы загрузить видео напрямую, перенеси бит в облако из карточки бита.</p>}
                 </div>
               </div>
@@ -724,9 +732,20 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
           </>}
           {screen === 'detail' && selected && <>
             <button className="back-link" onClick={() => navigate('library')}><ArrowLeft size={17} /> Все биты</button><section className="detail-hero"><Cover beat={selected} className="detail-cover" /><div className="detail-identity"><div className="eyebrow">{selected.isDemo ? 'Демо-проект' : 'Черновик'}</div><h1>{selected.title}</h1><p>{selected.tags}</p><div className="meta-row"><span>{selected.bpm} BPM</span><i /><span>{selected.key}</span></div><div className="detail-audio">{selected.audioUrl ? <><FileAudio2 size={17} /><span>{selected.audioName}</span>{trackPlayButton(selected)}</> : <><Music2 size={18} /><span>{selected.isDemo ? 'Аудио для этого демо-бита не загружено' : 'Аудиофайл не добавлен'}</span></>}</div></div></section>
-            <div className="detail-tabs" role="tablist" aria-label="Разделы бита">{([['data', 'Данные'], ['stats', 'Статистика']] as [DetailTab, string][]).map(([id, label]) => <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? 'is-active' : ''} onClick={() => setTab(id)}>{label}</button>)}</div>
+            <div className="detail-tabs" role="tablist" aria-label="Разделы бита">{([['data', 'Данные'], ['publications', 'Публикации'], ['stats', 'Статистика']] as [DetailTab, string][]).map(([id, label]) => <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? 'is-active' : ''} onClick={() => setTab(id)}>{label}</button>)}</div>
             {tab === 'data' && <div className="detail-section" key="data"><div className="section-intro"><h2>Данные бита</h2><p>Изменения сохраняются автоматически.</p></div><div className="data-card data-card--editable"><label className="field"><span>НАЗВАНИЕ</span><input aria-label="Название бита" maxLength={120} value={selected.title} onChange={(event) => updateBeat({ title: event.target.value })} /></label><label className="field"><span>ТЕМП (BPM)</span><input aria-label="Темп BPM" type="number" min="1" max="300" value={selected.bpm === '—' ? '' : selected.bpm} onChange={(event) => updateBeat({ bpm: event.target.value || '—' })} /></label><div className="field"><span>ТОНАЛЬНОСТЬ</span><KeyPicker value={selected.key} label="Тональность бита" onChange={(key) => updateBeat({ key })} onCommit={(value) => { const key = normalizeMusicKey(value); if (key !== null) updateBeat({ key: key || "—" }); else { updateBeat({ key: "—" }); notify("Не распознал тональность; выбери вариант из списка.") } }} /></div><label className="field"><span>ТЕГИ</span><input aria-label="Теги бита" value={selected.tags} onChange={(event) => updateBeat({ tags: event.target.value })} /></label></div>{!selected.isDemo && <label className="upload-zone cover-edit"><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void changeCover(event.target.files?.[0])} /><ImagePlus size={22} /><strong>Изменить обложку</strong><span>JPG, PNG или WEBP до 2 МБ</span></label>}<p className="detail-footnote">Подписи для площадок редактируются в разделе «Публикация». {selected.cloud ? 'MP3 и обложка хранятся в облаке.' : ''}</p>{!selected.isDemo && <div className="delete-beat">{cloudAvailable && !selected.cloud && <button onClick={migrateBeat} disabled={savingBeat}><UploadCloud size={16} /> {savingBeat ? 'Переносим…' : 'Перенести в облако'}</button>}{confirmDelete ? <><p>Удалить «{selected.title}» вместе с аудио и обложкой {selected.cloud ? 'из облака' : 'с этого устройства'}?</p><div><button onClick={() => setConfirmDelete(false)}>Отмена</button><button className="delete-beat-confirm" onClick={deleteBeat} disabled={deleting}>Подтвердить удаление</button></div></> : <button onClick={() => setConfirmDelete(true)}><Trash2 size={16} /> Удалить бит</button>}</div>}</div>}
-            {tab === 'stats' && <div className="detail-section" key="stats"><div className="section-intro"><h2>Статистика</h2><p>Публикации этого бита и их показатели.</p></div><div className="links-panel">{!selected.telegramLink && !selected.youtubeLink && <p className="form-hint">После публикации здесь появится ссылка. Можно добавить её вручную.</p>}<BeatPlatformStats platform="youtube" beat={selected} state={youtubeStats} openChannels={() => navigate('channels')} /><BeatPlatformStats platform="telegram" beat={selected} state={telegramStats} openChannels={() => navigate('channels')} /><label className="field"><span>ПОСТ В TELEGRAM</span><div className="link-input"><Link2 size={18} /><input type="url" placeholder="https://t.me/yourchannel/123" value={selected.telegramLink} onChange={(e) => updateBeat({ telegramLink: e.target.value })} />{selected.telegramLink && <a href={selected.telegramLink} target="_blank" rel="noreferrer" aria-label="Открыть Telegram"><ExternalLink size={17} /></a>}</div></label><label className="field"><span>ВИДЕО НА YOUTUBE</span><div className="link-input"><Link2 size={18} /><input type="url" placeholder="https://youtube.com/watch?v=..." value={selected.youtubeLink} onChange={(e) => updateBeat({ youtubeLink: e.target.value, youtubePublishAt: null })} />{selected.youtubeLink && <a href={selected.youtubeLink} target="_blank" rel="noreferrer" aria-label="Открыть YouTube"><ExternalLink size={17} /></a>}</div></label>{selected.youtubeLink && selected.youtubePublishAt && <YoutubeReleaseTime publishAt={selected.youtubePublishAt} />}<p className="form-hint">{selected.cloud ? 'Ссылки сохраняются в облаке.' : 'Ссылки сохраняются на этом устройстве.'}</p></div></div>}
+            {tab === 'publications' && <PublicationHistory key={selected.id} beat={selected} channels={channels}
+              stats={{ youtube: youtubeStats.stats, telegram: telegramStats.stats }} save={savePublicationLink}
+              openPublication={() => openPublish(selected)} />}
+            {tab === 'stats' && <div className="detail-section" key="stats">
+              <div className="section-intro"><h2>Статистика</h2><p>Сумма по публикациям этого бита.</p></div>
+              <div className="links-panel">
+                {getBeatPublications(selected).length === 0 && <p className="form-hint">У этого бита пока нет публикаций.</p>}
+                <BeatPlatformStats platform="youtube" beat={selected} state={youtubeStats} openChannels={() => navigate('channels')} />
+                <BeatPlatformStats platform="telegram" beat={selected} state={telegramStats} openChannels={() => navigate('channels')} />
+                <button type="button" className="outline-button" onClick={() => setTab('publications')}>Открыть публикации</button>
+              </div>
+            </div>}
           </>}
         </main>
       </div>

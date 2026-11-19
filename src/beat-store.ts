@@ -1,3 +1,10 @@
+export type BeatPublication = {
+  platform: 'telegram' | 'youtube'
+  url: string
+  savedAt?: string | null
+  publishAt?: string | null
+}
+
 export type StoredBeat = {
   id: string
   createdAt: number
@@ -13,6 +20,7 @@ export type StoredBeat = {
   telegramLink: string
   youtubeLink: string
   youtubePublishAt?: string | null
+  publications?: BeatPublication[]
 }
 
 type StoredFiles = { id: string; audioFile?: File; coverFile?: File }
