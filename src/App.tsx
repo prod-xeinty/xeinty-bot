@@ -1,7 +1,7 @@
 import { YoutubeChannelSettings, YoutubeUpload } from './youtube-upload'
 import { getBeatPublications, PublicationHistory, rememberPublication } from './publication-history'
 import { PlannedReleases } from './planned-releases'
-import { usePlatformStats, StatsOverview } from './platform-stats'
+import { usePlatformStats, StatsOverview, type StatsRanking } from './platform-stats'
 import xeintyLogo from './assets/xeinty-logo.png'
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { ArrowLeft, ArrowRight, AudioLines, Check, ChevronDown, ChevronRight, ChevronUp, CircleHelp, Clipboard, Download, ExternalLink, FileAudio2, ImagePlus, Link2, ListMusic, Music2, Ellipsis, Plus, Radio, Send, Trash2, UploadCloud, X } from 'lucide-react'
@@ -68,6 +68,8 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
   const [cloudReady, setCloudReady] = useState(false)
   const [screen, setScreen] = useState<Screen>('library')
   const [tab, setTab] = useState<DetailTab>('data')
+  const [detailFromStats, setDetailFromStats] = useState(false)
+  const [statsRanking, setStatsRanking] = useState<StatsRanking>({ query: '', metrics: { youtube: 'views', telegram: 'views' } })
   const [focusedPublication, setFocusedPublication] = useState<string>()
   const [publishMode, setPublishMode] = useState<PublishMode>('single')
   const [beats, setBeats] = useState<Beat[]>(demoBeats)
@@ -419,6 +421,7 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
     setSelectedId(beat.id)
     setTab(nextTab)
     setFocusedPublication(publication)
+    setDetailFromStats(screen === 'overview')
     setConfirmDelete(false)
     navigate('detail')
   }
@@ -829,15 +832,15 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
           </>}
           {screen === 'overview' && <>
             <div className="page-heading"><div><h1>Статистика</h1><p>Показатели публикаций из библиотеки битов.</p></div></div>
-            <StatsOverview beats={beats} platform={statsPlatform} setPlatform={setStatsPlatform} state={statsPlatform === 'youtube' ? youtubeStats : telegramStats} openChannels={() => navigate('channels')}
+            <StatsOverview beats={beats} ranking={statsRanking} setRanking={setStatsRanking} platform={statsPlatform} setPlatform={setStatsPlatform} state={statsPlatform === 'youtube' ? youtubeStats : telegramStats} openChannels={() => navigate('channels')}
               openPublication={() => openPublish()} openBeat={(id) => {
                 const beat = beats.find((item) => item.id === id)
                 if (beat) openBeat(beat, 'publications')
               }} />
           </>}
           {screen === 'detail' && selected && <>
-            <button className="back-link" onClick={() => navigate(focusedPublication ? 'publish' : 'library')}>
-              <ArrowLeft size={17} /> {focusedPublication ? 'К расписанию' : 'Все биты'}
+            <button className="back-link" onClick={() => navigate(focusedPublication ? 'publish' : detailFromStats ? 'overview' : 'library')}>
+              <ArrowLeft size={17} /> {focusedPublication ? 'К расписанию' : detailFromStats ? 'К статистике' : 'Все биты'}
             </button><section className="detail-hero"><Cover beat={selected} className="detail-cover" /><div className="detail-identity"><div className="eyebrow">{selected.isDemo ? 'Демо-проект' : 'Черновик'}</div><h1>{selected.title}</h1><p>{selected.tags}</p><div className="meta-row"><span>{selected.bpm} BPM</span><i /><span>{selected.key}</span></div><div className="detail-audio">{selected.audioUrl ? <><FileAudio2 size={17} /><span>{selected.audioName}</span>{trackPlayButton(selected)}</> : <><Music2 size={18} /><span>{selected.isDemo ? 'Аудио для этого демо-бита не загружено' : 'Аудиофайл не добавлен'}</span></>}</div></div></section>
             <div className="detail-tabs" role="tablist" aria-label="Разделы бита">{([['data', 'Данные'], ['publications', 'Публикации']] as [DetailTab, string][]).map(([id, label]) => <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? 'is-active' : ''} onClick={() => setTab(id)}>{label}</button>)}</div>
             {tab === 'data' && <div className="detail-section" key="data"><div className="section-intro"><h2>Данные бита</h2><p>Изменения сохраняются автоматически.</p></div><div className="data-card data-card--editable"><label className="field"><span>НАЗВАНИЕ</span><input aria-label="Название бита" maxLength={120} value={selected.title} onChange={(event) => updateBeat({ title: event.target.value })} /></label><label className="field"><span>ТЕМП (BPM)</span><input aria-label="Темп BPM" type="number" min="1" max="300" value={selected.bpm === '—' ? '' : selected.bpm} onChange={(event) => updateBeat({ bpm: event.target.value || '—' })} /></label><div className="field"><span>ТОНАЛЬНОСТЬ</span><KeyPicker value={selected.key} label="Тональность бита" onChange={(key) => updateBeat({ key })} onCommit={(value) => { const key = normalizeMusicKey(value); if (key !== null) updateBeat({ key: key || "—" }); else { updateBeat({ key: "—" }); notify("Не распознал тональность; выбери вариант из списка.") } }} /></div><label className="field"><span>ТЕГИ</span><input aria-label="Теги бита" value={selected.tags} onChange={(event) => updateBeat({ tags: event.target.value })} /></label></div>{!selected.isDemo && <label className="upload-zone cover-edit"><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void changeCover(event.target.files?.[0])} /><ImagePlus size={22} /><strong>Изменить обложку</strong><span>JPG, PNG или WEBP до 2 МБ</span></label>}<p className="detail-footnote">Подписи для площадок редактируются в разделе «Публикация». {selected.cloud ? 'MP3 и обложка хранятся в облаке.' : ''}</p>{!selected.isDemo && <div className="delete-beat">{cloudAvailable && !selected.cloud && <button onClick={migrateBeat} disabled={savingBeat}><UploadCloud size={16} /> {savingBeat ? 'Переносим…' : 'Перенести в облако'}</button>}{confirmDelete ? <><p>Удалить «{selected.title}» вместе с аудио и обложкой {selected.cloud ? 'из облака' : 'с этого устройства'}?</p><div><button onClick={() => setConfirmDelete(false)}>Отмена</button><button className="delete-beat-confirm" onClick={deleteBeat} disabled={deleting}>Подтвердить удаление</button></div></> : <button onClick={() => setConfirmDelete(true)}><Trash2 size={16} /> Удалить бит</button>}</div>}</div>}

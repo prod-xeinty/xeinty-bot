@@ -1,5 +1,7 @@
 import { useEffect, useState, type CSSProperties } from 'react'
 import { ChevronRight, Music2 } from 'lucide-react'
+import { BeatSearch, matchBeats } from './beat-library'
+import { Dropdown } from './choice-menu'
 import { loadPlatformStats, type PlatformStats, type PostMetrics, type StatsPlatform } from './cloud-beats'
 import { getBeatPublications } from './publication-history'
 import type { StoredBeat } from './beat-store'
@@ -8,7 +10,7 @@ const numberFormat = new Intl.NumberFormat('ru-RU')
 const timeFormat = new Intl.DateTimeFormat('ru-RU', { dateStyle: 'short', timeStyle: 'short' })
 
 export function usePlatformStats(platform: StatsPlatform, initData?: string, activeView?: string) {
-  const [stats, setStats] = useState<PlatformStats>()
+  const [snapshot, setSnapshot] = useState<{ data: PlatformStats; session: string; platform: StatsPlatform }>()
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [revision, setRevision] = useState(0)
@@ -16,43 +18,41 @@ export function usePlatformStats(platform: StatsPlatform, initData?: string, act
   useEffect(() => {
     if (!initData || !activeView) return
     const request = new AbortController()
-    setStats(undefined)
     setError('')
     setLoading(true)
     void loadPlatformStats(initData, platform, request.signal).then((data) => {
-      if (!request.signal.aborted) setStats(data)
+      if (!request.signal.aborted) setSnapshot({ data, session: initData, platform })
     }).catch((failure) => {
       if (!request.signal.aborted) setError(failure instanceof Error ? failure.message : 'Не удалось загрузить статистику.')
     }).finally(() => { if (!request.signal.aborted) setLoading(false) })
     return () => request.abort()
   }, [platform, initData, activeView, revision])
 
+  const stats = snapshot?.session === initData && snapshot?.platform === platform ? snapshot.data : undefined
   return { stats, error, loading, refresh: () => setRevision((value) => value + 1) }
 }
 
 type StatsState = ReturnType<typeof usePlatformStats>
-type LinkedBeat = Pick<StoredBeat, 'id' | 'title' | 'youtubeLink' | 'youtubePublishAt' | 'telegramLink' | 'publications'> & { cloud?: boolean; coverUrl?: string }
+type LinkedBeat = Pick<StoredBeat, 'id' | 'title' | 'bpm' | 'key' | 'tags' | 'audioName' | 'youtubeLink' | 'youtubePublishAt' | 'telegramLink' | 'publications'> & { cloud?: boolean; coverUrl?: string }
 const platformNames = { youtube: 'YouTube', telegram: 'Telegram' }
 const metricLabels = { views: 'Просмотры', likes: 'Лайки', reactions: 'Реакции', comments: 'Комментарии', forwards: 'Пересылки', saves: 'Сохранения' }
-const platformMetrics: Record<StatsPlatform, (keyof PostMetrics)[]> = {
-  youtube: ['views', 'likes', 'comments', 'saves'],
-  telegram: ['views', 'reactions', 'comments', 'forwards', 'saves'],
-}
+const rankingMetrics = {
+  youtube: ['views', 'likes', 'comments'],
+  telegram: ['views', 'reactions', 'comments', 'forwards'],
+} as const
+type RankingMetric = typeof rankingMetrics[StatsPlatform][number]
+export type StatsRanking = { query: string; metrics: Record<StatsPlatform, RankingMetric> }
 
-function linksFor(beat: LinkedBeat, platform: StatsPlatform) {
-  return getBeatPublications(beat).filter((post) => post.platform === platform).map((post) => post.url)
-}
-
-function beatViews(stats: PlatformStats | undefined, beat: LinkedBeat, platform: StatsPlatform) {
-  if (!beat.cloud || !stats) return null
-  const links = new Set(linksFor(beat, platform))
-  const unique = new Map<string, number>()
-  for (const entry of stats.entries) {
-    if (entry.beatId === beat.id && links.has(entry.link) && typeof entry.views === 'number') {
-      unique.set(entry.mediaKey ?? entry.link, entry.views)
-    }
+function rankBeats(beats: { beat: LinkedBeat; links: Set<string> }[], stats: PlatformStats | undefined, metric: RankingMetric) {
+  const rows = new Map(beats.map(({ beat, links }) => [beat.id, { beat, links, counts: new Map<string, number>() }]))
+  for (const entry of stats?.entries ?? []) {
+    const row = rows.get(entry.beatId)
+    const count = entry[metric]
+    if (row?.links.has(entry.link) && typeof count === 'number') row.counts.set(entry.mediaKey ?? entry.link, count)
   }
-  return unique.size ? [...unique.values()].reduce((total, views) => total + views, 0) : null
+  return Array.from(rows.values(), ({ beat, counts }) => ({
+    beat, count: counts.size ? Array.from(counts.values()).reduce((sum, value) => sum + value, 0) : null,
+  })).sort((a, b) => (b.count ?? -1) - (a.count ?? -1))
 }
 
 const chartDay = new Intl.DateTimeFormat('ru-RU', {day: 'numeric', month: 'short', timeZone: 'UTC'})
@@ -88,7 +88,7 @@ function ViewsHistory({ stats }: { stats?: PlatformStats }) {
 }
 
 function MetricCards({ platform, metrics }: { platform: StatsPlatform; metrics?: PostMetrics }) {
-  return <dl className="stats-metric-grid">{platformMetrics[platform].map((key) => {
+  return <dl className="stats-metric-grid">{[...rankingMetrics[platform], 'saves' as const].map((key) => {
     const value = metrics?.[key]
     return <div key={key} className="stats-metric-card">
       <dt>{metricLabels[key]}</dt>
@@ -105,20 +105,25 @@ function StatsControls({ state, openChannels }: { state: StatsState; openChannel
         {state.loading ? 'Обновляем…' : 'Обновить данные'}
       </button>
       {state.error && <button className="outline-button" type="button" onClick={openChannels}>Открыть каналы</button>}
-      {state.stats && <small>Обновлено <time dateTime={state.stats.fetchedAt}>{timeFormat.format(Date.parse(state.stats.fetchedAt))}</time></small>}
+      {state.stats && <small>Последний замер <time dateTime={state.stats.fetchedAt}>{timeFormat.format(Date.parse(state.stats.fetchedAt))}</time></small>}
     </div>
   </>
 }
 
-export function StatsOverview({ platform, setPlatform, beats, state, openBeat, openChannels, openPublication }: {
+export function StatsOverview({ platform, setPlatform, beats, state, ranking, setRanking, openBeat, openChannels, openPublication }: {
   platform: StatsPlatform; setPlatform: (platform: StatsPlatform) => void;
-  beats: LinkedBeat[]; state: StatsState; openBeat: (id: string) => void;
+  beats: LinkedBeat[]; state: StatsState; ranking: StatsRanking; setRanking: (ranking: StatsRanking) => void;
+  openBeat: (id: string) => void;
   openChannels: () => void; openPublication: () => void
 }) {
-  const linked = beats.filter((beat) => beat.cloud && linksFor(beat, platform).length > 0)
+  const linked = beats.filter((beat) => beat.cloud).map((beat) => ({
+    beat, links: new Set(getBeatPublications(beat).filter((post) => post.platform === platform).map((post) => post.url)),
+  })).filter(({ links }) => links.size > 0)
   const result = state.stats
-  const rows = linked.map((beat) => ({ ...beat, views: beatViews(result, beat, platform) }))
-    .sort((a, b) => (b.views ?? -1) - (a.views ?? -1))
+  const metric = ranking.metrics[platform]
+  const options = rankingMetrics[platform].map((value) => ({ value, label: metricLabels[value] }))
+  const matches = new Set(matchBeats(linked.map(({ beat }) => beat), ranking.query).map((beat) => beat.id))
+  const rows = rankBeats(linked.filter(({ beat }) => matches.has(beat.id)), result, metric)
   return <section className="overview-hero youtube-stats" aria-label="Сводка по площадкам">
     <div className="publish-mode stats-platform-switch" role="group" aria-label="Площадка"
       style={{ '--tab-i': platform === 'youtube' ? 0 : 1 } as CSSProperties}>
@@ -138,17 +143,27 @@ export function StatsOverview({ platform, setPlatform, beats, state, openBeat, o
       </div>
       <StatsControls state={state} openChannels={openChannels} />
       <ViewsHistory stats={result} />
-      <div className="stats-list-heading"><h2>По битам</h2><span>Просмотры</span></div>
-      <ul className="youtube-stats-list" aria-label="Просмотры по битам">{rows.map((beat) => <li key={beat.id}>
-        <button type="button" onClick={() => openBeat(beat.id)}>
-          <span className="stats-row-cover" aria-hidden="true">
-            {beat.coverUrl ? <img src={beat.coverUrl} loading="lazy" alt="" /> : <Music2 size={17} />}
-          </span>
-          <span className="stats-row-title">{beat.title}</span>
-          <strong>{beat.views === null ? '—' : numberFormat.format(beat.views)}</strong>
-          <ChevronRight className="stats-row-arrow" size={16} aria-hidden="true" />
-        </button>
-      </li>)}</ul>
+      <section className="stats-ranking" aria-label="Рейтинг битов">
+        <div className="stats-list-heading"><h2>По битам</h2><span role="status">{rows.length} из {linked.length}</span></div>
+        <div className="stats-ranking-controls">
+          <BeatSearch label="Поиск бита в статистике" value={ranking.query} onChange={(query) => setRanking({ ...ranking, query })} />
+          <Dropdown label="Показатель" value={metric} options={options} onChange={(value) => {
+            const option = options.find((item) => item.value === value)
+            if (option) setRanking({ ...ranking, metrics: { ...ranking.metrics, [platform]: option.value } })
+          }} />
+        </div>
+        {rows.length === 0 && <p className="form-hint" role="status">По этому запросу ничего не найдено.</p>}
+        {rows.length > 0 && <ul className="youtube-stats-list" aria-label={metricLabels[metric] + " по битам"}>{rows.map(({ beat, count }) => <li key={beat.id}>
+            <button type="button" onClick={() => openBeat(beat.id)}>
+              <span className="stats-row-cover" aria-hidden="true">
+                {beat.coverUrl ? <img src={beat.coverUrl} loading="lazy" alt="" /> : <Music2 size={17} />}
+              </span>
+              <span className="stats-row-title">{beat.title}</span>
+              <strong>{count === null ? <span aria-label="Нет данных">—</span> : numberFormat.format(count)}</strong>
+              <ChevronRight className="stats-row-arrow" size={16} aria-hidden="true" />
+            </button>
+          </li>)}</ul>}
+      </section>
     </>}
   </section>
 }

@@ -763,3 +763,8 @@ input, textarea { caret-color: #fff; }
 .batch-selection-actions { display: flex; flex: none; }
 .batch-selection-actions button:disabled { opacity: .3; cursor: default; }
 @media (max-width: 620px) { .beat-search input { font-size: 16px; } }
+
+.stats-ranking-controls { display: grid; grid-template-columns: minmax(0, 1fr) minmax(145px, .45fr); align-items: end; gap: 8px; margin-top: 10px; }
+.stats-ranking-controls .field { min-width: 0; }
+.stats-ranking-controls .beat-search input { min-height: 46px; }
+@media (max-width: 420px) { .stats-ranking-controls { grid-template-columns: minmax(0, 1fr); } }
