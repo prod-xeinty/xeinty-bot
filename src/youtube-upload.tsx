@@ -26,7 +26,7 @@ function storeSession(key: string, value: string | null) {
   } catch { /* Upload can still resume while this screen is open. */ }
 }
 
-export function YoutubeUpload({ initData, beatId, video, fileKey, existingLink, beforeStart, onSaved, openLink }: {
+export function YoutubeUpload({ initData, beatId, video, fileKey, existingLink, beforeStart, onSaved, onNotice, openLink }: {
   initData: string
   beatId: string
   video?: Blob
@@ -34,6 +34,7 @@ export function YoutubeUpload({ initData, beatId, video, fileKey, existingLink, 
   existingLink: string
   beforeStart: () => Promise<void>
   onSaved: (url: string) => void
+  onNotice: (message: string) => void
   openLink?: (url: string) => void
 }) {
   const key = 'xeinty-youtube-upload:' + beatId + ':' + fileKey
@@ -42,6 +43,7 @@ export function YoutubeUpload({ initData, beatId, video, fileKey, existingLink, 
   const [busy, setBusy] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState(0)
+  const [confirming, setConfirming] = useState(false)
   const [result, setResult] = useState<{ url: string; saved: boolean }>()
   const [error, setError] = useState('')
   const request = useRef<AbortController>(null)
@@ -82,6 +84,7 @@ export function YoutubeUpload({ initData, beatId, video, fileKey, existingLink, 
     const controller = new AbortController()
     request.current = controller
     setUploading(true)
+    setConfirming(false)
     setError('')
     const uploadId = session.current ?? crypto.randomUUID()
     session.current = uploadId
@@ -93,11 +96,21 @@ export function YoutubeUpload({ initData, beatId, video, fileKey, existingLink, 
         uploadId, beatId, size: video.size, mimeType: video.type || 'application/octet-stream', madeForKids: false,
       })
       let step: YoutubeUploadStep = await resumeYoutubeUpload(initData, uploadId, controller.signal)
+      let confirmationChecks = 0
       while ('next' in step) {
         if (controller.signal.aborted) return
         const { next } = step
-        setProgress(Math.floor(next / video.size * 100))
-        if (next < 0 || next >= video.size) throw new Error('YouTube ещё проверяет загрузку. Нажми «Продолжить загрузку» чуть позже.')
+        setProgress(Math.min(99, Math.floor(next / video.size * 100)))
+        if (next < 0 || next > video.size) throw new Error('YouTube вернул неверную позицию загрузки.')
+        if (next === video.size) {
+          setConfirming(true)
+          if (++confirmationChecks > 4) throw new Error('YouTube ещё проверяет загрузку. Нажми «Продолжить загрузку» чуть позже.')
+          await new Promise((resolve) => window.setTimeout(resolve, 1500))
+          if (controller.signal.aborted) return
+          step = await resumeYoutubeUpload(initData, uploadId, controller.signal)
+          continue
+        }
+        if (next + chunkSize >= video.size) setConfirming(true)
         const chunk = await encodeChunk(video.slice(next, next + chunkSize))
         step = await sendYoutubeChunk(initData, uploadId, next, chunk, controller.signal)
         if ('next' in step && step.next <= next) throw new Error('YouTube не подтвердил фрагмент. Продолжи загрузку.')
@@ -105,6 +118,7 @@ export function YoutubeUpload({ initData, beatId, video, fileKey, existingLink, 
       if (controller.signal.aborted) return
       setProgress(100)
       setResult(step)
+      onNotice(step.saved ? 'Видео успешно загружено на YouTube' : 'Видео загружено, ссылка пока не сохранена')
       if (step.saved) {
         session.current = null
         storeSession(key, null)
@@ -122,6 +136,7 @@ export function YoutubeUpload({ initData, beatId, video, fileKey, existingLink, 
     } finally {
       request.current = null
       setUploading(false)
+      setConfirming(false)
     }
   }
 
@@ -146,9 +161,9 @@ export function YoutubeUpload({ initData, beatId, video, fileKey, existingLink, 
       <p className="form-hint">YouTube подключён. Видео будет доступно только тебе.</p>
       {!video && <p className="form-hint">Собери видео или выбери файл с устройства.</p>}
       {(!result || !result.saved) && <button type="button" className="copy-button" disabled={!video || uploading || busy} onClick={() => void upload()}>
-        {uploading ? 'Загружаем…' : result ? 'Повторить сохранение ссылки' : session.current ? 'Продолжить загрузку' : 'Загрузить приватное видео'}
+        {uploading ? confirming ? 'Ждём подтверждения YouTube…' : 'Загружаем…' : result ? 'Повторить сохранение ссылки' : session.current ? 'Продолжить загрузку' : 'Загрузить приватное видео'}
       </button>}
-      {(uploading || progress > 0) && <div className="youtube-upload-progress">
+      {!result && (uploading || progress > 0) && <div className="youtube-upload-progress">
         <progress value={progress} max={100} aria-label="Прогресс загрузки" /><span>{progress}%</span>
       </div>}
       <button type="button" className="copy-button copy-button--subtle" disabled={uploading || busy} onClick={() => void run(async () => {
@@ -161,6 +176,9 @@ export function YoutubeUpload({ initData, beatId, video, fileKey, existingLink, 
     </>}
     {error && <p className="video-error" role="alert">{error}</p>}
     {(result?.url || existingLink) && <a className="video-download" href={result?.url || existingLink} target="_blank" rel="noreferrer">Открыть видео на YouTube</a>}
-    {result && <p className="form-hint" role="status">{result.saved ? 'Видео загружено. Ссылка сохранена у бита.' : 'Видео загружено. Ссылка пока не сохранилась.'}</p>}
+    {result && <div className="stats-notice" role="status"><div>
+      <strong>{result.saved ? 'Видео успешно загружено' : 'Видео загружено'}</strong>
+      <p>{result.saved ? 'Ссылка сохранена у бита. YouTube может ещё обрабатывать видео.' : 'Ссылка пока не сохранилась. Можно повторить сохранение.'}</p>
+    </div></div>}
   </div>
 }

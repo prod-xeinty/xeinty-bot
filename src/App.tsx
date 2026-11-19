@@ -53,8 +53,11 @@ function staggerStyle(index: number): CSSProperties {
   return { '--stagger': index } as CSSProperties
 }
 
-function App() {
+function App({ onStartupReady }: { onStartupReady: () => void }) {
   const [webApp, setWebApp] = useState(getTelegramWebApp)
+  const [telegramChecked, setTelegramChecked] = useState(Boolean(webApp))
+  const [localReady, setLocalReady] = useState(false)
+  const [cloudReady, setCloudReady] = useState(false)
   const [screen, setScreen] = useState<Screen>('library')
   const [tab, setTab] = useState<DetailTab>('data')
   const [publishMode, setPublishMode] = useState<'single' | 'batch'>('single')
@@ -77,6 +80,7 @@ function App() {
   const [videoSource, setVideoSource] = useState<'generated' | 'own'>('generated')
   const [videoStage, setVideoStage] = useState<VideoStage | null>(null)
   const [videoError, setVideoError] = useState('')
+  const [videoFileHintId, setVideoFileHintId] = useState<string>()
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [savingBeat, setSavingBeat] = useState(false)
@@ -89,6 +93,9 @@ function App() {
   const pendingCloudWrites = useRef(new Map<string, Promise<void>>())
   const selected = beats.find((beat) => beat.id === selectedId) ?? beats[0]
   const latest = beats[0]
+  const hasVideoAudio = Boolean(selected.audioFile || selected.audioUrl)
+  const hasVideoCover = Boolean(selected.coverFile || selected.coverUrl)
+  const missingVideoFiles = !hasVideoAudio && !hasVideoCover ? 'обложки и аудиофайла' : !hasVideoCover ? 'обложки' : !hasVideoAudio ? 'аудиофайла' : ''
   const selectedOwnVideo = ownVideo?.beatId === selected.id ? ownVideo.file : undefined
   const youtubeVideo = videoSource === 'own' ? selectedOwnVideo : videoResult?.beatId === selected.id ? videoResult.blob : undefined
   const youtubeFileKey = videoSource === 'own'
@@ -293,9 +300,15 @@ function App() {
     const script = document.createElement('script')
     script.src = 'https://telegram.org/js/telegram-web-app.js'
     script.async = true
-    script.onload = () => setWebApp(getTelegramWebApp())
+    function checkTelegram() {
+      setWebApp(getTelegramWebApp())
+      setTelegramChecked(true)
+    }
+    const timer = window.setTimeout(() => setTelegramChecked(true), 3500)
+    script.onload = checkTelegram
+    script.onerror = () => setTelegramChecked(true)
     document.head.appendChild(script)
-    return () => { script.onload = null; script.remove() }
+    return () => { window.clearTimeout(timer); script.onload = null; script.onerror = null; script.remove() }
   }, [webApp])
 
   useEffect(() => {
@@ -321,20 +334,28 @@ function App() {
         return { ...beat, key: normalizeMusicKey(beat.key) ?? beat.key, cover: 0, coverUrl, audioUrl, audioFile: files?.audioFile, coverFile: files?.coverFile }
       })
       setBeats((current) => [...restored.filter((beat) => !current.some((item) => item.id === beat.id)), ...current])
-    }).catch(() => notify('Не удалось открыть хранилище на этом устройстве'))
+    }).catch(() => { if (!cancelled) notify('Не удалось открыть хранилище на этом устройстве') })
+      .finally(() => { if (!cancelled) setLocalReady(true) })
     return () => { cancelled = true; fileUrlsRef.current.forEach((url) => URL.revokeObjectURL(url)) }
   }, [])
 
   useEffect(() => {
     if (!webApp?.initData || !cloudConfigured()) return
     let cancelled = false
-    void loadCloudBeats(webApp.initData).then((saved) => {
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => controller.abort(), 9000)
+    void loadCloudBeats(webApp.initData, controller.signal).then((saved) => {
       if (!cancelled) setBeats((current) => [
         ...saved.map((beat) => ({ ...beat, key: normalizeMusicKey(beat.key) ?? beat.key, cover: 0 })),
         ...current.filter((beat) => !saved.some((remote) => remote.id === beat.id)),
       ])
-    }).catch((error) => { if (!cancelled) notify(error instanceof Error ? error.message : 'Не удалось загрузить биты из облака') })
-    return () => { cancelled = true }
+    }).catch((error) => {
+      if (!cancelled) notify(controller.signal.aborted ? 'Облако не ответило. Открой XEINTY заново для повторной загрузки.' : error instanceof Error ? error.message : 'Не удалось загрузить биты из облака')
+    }).finally(() => {
+      window.clearTimeout(timer)
+      if (!cancelled) setCloudReady(true)
+    })
+    return () => { cancelled = true; window.clearTimeout(timer); controller.abort() }
   }, [webApp])
 
   useEffect(() => {
@@ -343,6 +364,10 @@ function App() {
       if (firstOwnBeat) setSelectedId(firstOwnBeat.id)
     }
   }, [beats, screen, selected])
+
+  useEffect(() => {
+    if (localReady && telegramChecked && (!cloudAvailable || cloudReady)) onStartupReady()
+  }, [localReady, telegramChecked, cloudAvailable, cloudReady, onStartupReady])
 
   function notify(message: string) { setToast(message); window.setTimeout(() => setToast(''), 3500) }
   function navigate(next: Screen) {
@@ -405,13 +430,12 @@ function App() {
   }
   async function createVideo() {
     if (videoStage) return
-    const hasAudio = Boolean(selected.audioFile || selected.audioUrl)
-    const hasCover = Boolean(selected.coverFile || selected.coverUrl)
-    if (!hasAudio || !hasCover) {
-      const missing = !hasAudio && !hasCover ? 'обложку и аудиофайл' : !hasCover ? 'обложку' : 'аудиофайл'
-      setVideoError('Для сборки MP4 добавь ' + missing + ' в карточке бита.')
+    if (missingVideoFiles) {
+      setVideoError('')
+      setVideoFileHintId(selected.id)
       return
     }
+    setVideoFileHintId(undefined)
     setVideoError('')
     setVideoStage('preparing')
     const started = performance.now()
@@ -438,10 +462,17 @@ function App() {
       const result = await saveVideoFile(videoResult.blob, filename)
       if (result === 'saved') notify('MP4 сохранён в выбранную папку')
       if (result === 'shared') notify('В меню выбери «Сохранить в Файлы»')
-      if (result === 'unsupported') setVideoError('Сохранение файлов недоступно в этом Telegram. Попробуй «Обычная загрузка» или открой XEINTY в браузере.')
+      if (result === 'unsupported') {
+        const link = document.createElement('a')
+        link.href = videoResult.url
+        link.download = filename
+        document.body.appendChild(link)
+        link.click()
+        link.remove()
+      }
     } catch (error) {
       console.error('Video save failed:', error)
-      setVideoError('Не удалось открыть меню сохранения. Попробуй «Обычная загрузка» или открой XEINTY в браузере.')
+      setVideoError('Не удалось открыть меню сохранения. Попробуй открыть XEINTY в браузере.')
     }
   }
   async function deleteBeat() {
@@ -602,8 +633,13 @@ function App() {
                 {videoSource === 'own' ? <OwnYoutubeVideo key={selected.id} file={selectedOwnVideo} onChange={(file) => setOwnVideo(file ? { beatId: selected.id, file } : undefined)} /> : <>
                   <button className="primary-button video-action" type="button" onClick={createVideo} disabled={videoStage !== null}>{videoStage ? 'Сборка идёт…' : 'Собрать MP4'} {!videoStage && <ArrowRight size={18} />}</button>
                   {videoStage && <p className="video-status" role="status">{videoStage === 'loading' ? 'Загружаем видеодвижок — около 31 МБ…' : videoStage === 'preparing' ? 'Подготавливаем файлы…' : 'Собираем видео. Не закрывай Telegram…'}</p>}
+                  <p className="video-hint">MP4 · 960×540 (540p) · 15 кадров/с · AAC 192 кбит/с</p>
+                  {videoFileHintId === selected.id && missingVideoFiles && <div>
+                    <p className="video-error" role="alert">Для сборки MP4 не хватает {missingVideoFiles}.</p>
+                    <button type="button" className="outline-button" onClick={() => openBeat(selected)}>Открыть карточку бита <ArrowRight size={16} /></button>
+                  </div>}
                   {videoError && <p className="video-error" role="alert">{videoError}</p>}
-                  {videoResult?.beatId === selected.id && <div className="video-result"><video src={videoResult.url} controls playsInline preload="metadata" aria-label={`Готовое видео ${selected.title}`} /><p>MP4 · {(videoResult.size / 1024 / 1024).toFixed(1)} МБ · сборка {videoResult.seconds} с</p><div className="video-save-actions"><button className="video-download" onClick={saveVideo}><Download size={17} /> Сохранить MP4</button><a className="video-download video-download--secondary" href={videoResult.url} download={`${selected.title.replace(/[^a-z0-9а-яё-]+/gi, '-').toLowerCase()}.mp4`}>Обычная загрузка</a><a className="video-download" href="https://studio.youtube.com/" target="_blank" rel="noreferrer">Открыть YouTube Studio <ExternalLink size={16} /></a></div><p>Загрузи сохранённый MP4 в Studio. Studio откроется отдельно от XEINTY.</p></div>}
+                  {videoResult?.beatId === selected.id && <div className="video-result"><video src={videoResult.url} controls playsInline preload="metadata" aria-label={`Готовое видео ${selected.title}`} /><p>MP4 · {(videoResult.size / 1024 / 1024).toFixed(1)} МБ · сборка {videoResult.seconds} с</p><div className="video-save-actions"><button className="video-download" onClick={saveVideo}><Download size={17} /> Сохранить MP4</button><a className="video-download" href="https://studio.youtube.com/" target="_blank" rel="noreferrer">Открыть YouTube Studio <ExternalLink size={16} /></a></div><p>Загрузи сохранённый MP4 в Studio. Studio откроется отдельно от XEINTY.</p></div>}
                 </>}
               </div>
               {cloudAvailable && selected.cloud && webApp?.initData && <YoutubeUpload
@@ -615,6 +651,7 @@ function App() {
                   cloudSaveTimersRef.current.delete(selected.id)
                   await persistBeat(selected)
                 }}
+                onNotice={notify}
                 onSaved={(youtubeLink) => setBeats((all) => all.map((beat) => beat.id === selected.id ? { ...beat, youtubeLink } : beat))} />}
               {cloudAvailable && !selected.cloud && <p className="form-hint">Чтобы загрузить видео напрямую, перенеси бит в облако из карточки бита.</p>}
                 </div>
