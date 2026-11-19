@@ -168,6 +168,12 @@ export function createYoutubeConnection(initData: string, manageSchedule = false
   return call<{ url: string }>(initData, 'youtube-connect', { manageSchedule })
 }
 
+export type YoutubeScheduleRefresh = { entries: { url: string; publishAt: string | null }[]; unavailable: number }
+
+export function refreshYoutubeSchedule(initData: string, links: string[]) {
+  return call<YoutubeScheduleRefresh>(initData, 'youtube-schedule-refresh', { links })
+}
+
 export type YoutubeScheduleResult = { publishAt: string | null; changed: boolean; saved: boolean }
 
 export function changeYoutubeSchedule(initData: string, payload: {
