@@ -82,10 +82,10 @@ export function CaptionTools({ caption, onChange, preferences, youtube = false }
   return <div className="caption-tools">
     {preferences.templates.length ? <label className="field"><span>Шаблон</span><select value="" onChange={(event) => {
       const template = preferences.templates.find((item) => item.id === event.target.value)
-      if (template) insert(templateText(template))
+      if (template) onChange(templateText(template))
     }}>
       <option value="">Выбрать шаблон</option>
-      {preferences.templates.map((template) => <option key={template.id} value={template.id} disabled={append(templateText(template)).length > limit}>{template.name}</option>)}
+      {preferences.templates.map((template) => <option key={template.id} value={template.id} disabled={templateText(template).length > limit}>{template.name}</option>)}
     </select></label> : <p className="form-hint">Шаблоны можно создать в разделе «Ещё».</p>}
     {!youtube && preferences.hashtags.length > 0 && <div className="caption-tags" aria-label="Недавние хештеги">
       <span>Недавние хештеги</span>

@@ -1,3 +1,4 @@
+import xeintyLogo from './assets/xeinty-logo.png'
 import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft, ArrowRight, AudioLines, Check, ChevronRight, CircleHelp, Clipboard, Disc3, Download, ExternalLink, FileAudio2, ImagePlus, Link2, ListMusic, Music2, Ellipsis, Pause, Play, Plus, Radio, Send, Trash2, UploadCloud } from 'lucide-react'
 import { getTelegramWebApp } from './telegram'
@@ -7,7 +8,7 @@ import { deleteStoredBeat, loadStoredBeats, saveBeatCover, saveBeatMetadata, sav
 import { cloudConfigured, connectTelegramChannel, disconnectTelegramChannel, loadTelegramChannels, type TelegramChannel, createCloudBeat, deleteCloudBeat, loadCloudBeats, publishCloudTelegram, remoteFile, replaceCloudCover, updateCloudBeat } from './cloud-beats'
 import { canonicalKeyOptions, normalizeMusicKey } from './music-key'
 import { parseAudioName } from './filename'
-import { DirectTelegramPublication, PublicationLink, readPublicationCover, OwnYoutubeVideo } from './publication'
+import { DirectTelegramPublication, readPublicationCover, OwnYoutubeVideo } from './publication'
 
 import { CaptionTemplates, CaptionTools, readCaptionPreferences, TelegramChannels, } from './telegram-settings'
 
@@ -271,16 +272,6 @@ function App() {
     return result
   }
 
-  async function savePublicationLink(targets: Beat[], field: 'telegramLink' | 'youtubeLink', url: string) {
-    const saved = await Promise.allSettled(targets.map(async (beat) => {
-      window.clearTimeout(cloudSaveTimersRef.current.get(beat.id))
-      cloudSaveTimersRef.current.delete(beat.id)
-      await persistBeat({ ...beat, [field]: url })
-      setBeats((all) => all.map((item) => item.id === beat.id ? { ...item, [field]: url } : item))
-    }))
-    if (saved.some((result) => result.status === 'rejected')) throw new Error('Unable to save publication link')
-  }
-
   function updateBeat(patch: Partial<Beat>) {
     const updated = { ...selected, ...patch }
     setBeats((all) => all.map((beat) => beat.id === selected.id ? updated : beat))
@@ -436,13 +427,13 @@ function App() {
     { id: 'create' as Screen, label: 'Создать', Icon: Plus },
     { id: 'publish' as Screen, label: 'Публикация', Icon: Send },
     { id: 'channels' as Screen, label: 'Каналы', Icon: Radio },
-    { id: 'overview' as Screen, label: 'Обзор', Icon: AudioLines },
+    { id: 'overview' as Screen, label: 'Статистика', Icon: AudioLines },
     { id: 'more' as Screen, label: 'Ещё', Icon: Ellipsis },
   ]
 
   return <div className="app-shell">
     <div className="app-frame">
-      <header className="topbar"><button className="topbar-action topbar-create" onClick={() => navigate('create')} aria-label="Добавить новый бит"><Plus size={20} /></button><button className="wordmark" onClick={() => navigate('library')} aria-label="XEINTY — к библиотеке">Xeinty</button><span className="topbar-note">Студия битмейкера</span><span className="topbar-badge">Демо-версия</span><button className="topbar-action topbar-overview" onClick={() => navigate('overview')} aria-label="Открыть обзор"><AudioLines size={19} /></button></header>
+      <header className="topbar"><button className="topbar-action topbar-create" onClick={() => navigate('create')} aria-label="Добавить новый бит"><Plus size={20} /></button><button className="wordmark" onClick={() => navigate('library')} aria-label="XEINTY — к библиотеке"><img src={xeintyLogo} alt="" width={48} height={48} /></button><span className="topbar-badge">Демо-версия</span><button className="topbar-action topbar-overview" onClick={() => navigate('overview')} aria-label="Открыть статистику"><AudioLines size={19} /></button></header>
       <div className="workspace">
         <aside className="desktop-rail" aria-label="Навигация"><div className="rail-head"><strong>Рабочее пространство</strong><span>Биты и публикации</span></div><nav>{nav.map(({ id, label, Icon }) => <button key={id} className={screen === id || (screen === 'detail' && id === 'library' || screen === 'templates' && id === 'more') ? 'is-active' : ''} onClick={() => navigate(id)}><Icon size={19} />{label}<ChevronRight size={16} /></button>)}</nav><div className="rail-footer"><AudioLines size={18} /><span>Один бит — все материалы для его публикации.</span></div></aside>
         <main className="main-content" key={screen}>
@@ -475,7 +466,7 @@ function App() {
               <div className="platform-switch" role="tablist" aria-label="Площадка"><button role="tab" aria-selected={publicationPlatform === 'telegram'} className={publicationPlatform === 'telegram' ? 'is-active' : ''} onClick={() => setPublicationPlatform('telegram')}>Telegram</button><button role="tab" aria-selected={publicationPlatform === 'youtube'} className={publicationPlatform === 'youtube' ? 'is-active' : ''} onClick={() => setPublicationPlatform('youtube')}>YouTube</button></div>
               <div className="publication-grid">
                 <div className={`publication-card ${publicationPlatform === 'telegram' ? 'is-current' : ''}`}><div className="publication-card-head"><div className="platform-icon telegram-icon"><Send size={20} /></div><div><span>TELEGRAM</span><h3>Подпись к посту</h3></div></div><textarea aria-label="Подпись для Telegram" placeholder="Добавить подпись (необязательно)" value={selected.telegramCaption} maxLength={1024} onBlur={(e) => rememberHashtags(e.currentTarget.value)} onChange={(e) => updateBeat({ telegramCaption: e.target.value })} />{captionTools(selected.telegramCaption, (telegramCaption) => updateBeat({ telegramCaption }))}<label className="batch-cover-toggle"><input type="checkbox" checked={includeTelegramCover} onChange={(event) => toggleTelegramCover(event.target.checked)} /><span>Прикладывать обложку к посту</span></label>{cloudAvailable && selected.cloud && <DirectTelegramPublication channels={channels} key={selected.id} publish={(channel) => publishTelegram(channel, [selected], selected.telegramCaption, undefined, includeTelegramCover)} />}
-                  <PublicationLink key={selected.id + selected.telegramLink} platform="telegram" initial={selected.telegramLink} onSave={(url) => savePublicationLink([selected], 'telegramLink', url)} /></div>
+                </div>
                 <div className={`publication-card ${publicationPlatform === 'youtube' ? 'is-current' : ''}`}><div className="publication-card-head"><div className="platform-icon youtube-icon">▶</div><div><span>YOUTUBE</span><h3>Описание видео</h3></div></div><textarea aria-label="Описание для YouTube" placeholder="Описание (необязательно)" maxLength={5000} value={selected.youtubeDescription} onChange={(e) => updateBeat({ youtubeDescription: e.target.value })} />{captionTools(selected.youtubeDescription, (youtubeDescription) => updateBeat({ youtubeDescription }), true)}<label className="keywords-field"><span>КЛЮЧЕВЫЕ СЛОВА</span><input aria-label="Ключевые слова YouTube" value={selected.youtubeKeywords} onChange={(e) => updateBeat({ youtubeKeywords: e.target.value })} /></label>
 
               <div className="video-tool"><label className="field"><span>Видео для YouTube</span><select value={videoSource} onChange={(event) => setVideoSource(event.target.value === 'own' ? 'own' : 'generated')}>
@@ -487,11 +478,11 @@ function App() {
                   <button className="primary-button video-action" onClick={createVideo} disabled={videoStage !== null}>{videoStage ? 'Сборка идёт…' : 'Собрать MP4'} {!videoStage && <ArrowRight size={18} />}</button>
                   {videoStage && <p className="video-status" role="status">{videoStage === 'loading' ? 'Загружаем видеодвижок — около 31 МБ…' : videoStage === 'preparing' ? 'Подготавливаем файлы…' : 'Собираем видео. Не закрывай Telegram…'}</p>}
                   {videoError && <p className="video-error" role="alert">{videoError}</p>}
-                  {videoResult?.beatId === selected.id && <div className="video-result"><video src={videoResult.url} controls playsInline preload="metadata" aria-label={`Готовое видео ${selected.title}`} /><p>MP4 · {(videoResult.size / 1024 / 1024).toFixed(1)} МБ · сборка {videoResult.seconds} с</p><div className="video-save-actions"><button className="video-download" onClick={saveVideo}><Download size={17} /> Сохранить MP4</button><a className="video-download video-download--secondary" href={videoResult.url} download={`${selected.title.replace(/[^a-z0-9а-яё-]+/gi, '-').toLowerCase()}.mp4`}>Обычная загрузка</a><a className="video-download" href="https://studio.youtube.com/" target="_blank" rel="noreferrer">Открыть YouTube Studio <ExternalLink size={16} /></a></div><p>Загрузи сохранённый MP4 в Studio. После публикации сохрани ссылку в разделе YouTube.</p></div>}
+                  {videoResult?.beatId === selected.id && <div className="video-result"><video src={videoResult.url} controls playsInline preload="metadata" aria-label={`Готовое видео ${selected.title}`} /><p>MP4 · {(videoResult.size / 1024 / 1024).toFixed(1)} МБ · сборка {videoResult.seconds} с</p><div className="video-save-actions"><button className="video-download" onClick={saveVideo}><Download size={17} /> Сохранить MP4</button><a className="video-download video-download--secondary" href={videoResult.url} download={`${selected.title.replace(/[^a-z0-9а-яё-]+/gi, '-').toLowerCase()}.mp4`}>Обычная загрузка</a><a className="video-download" href="https://studio.youtube.com/" target="_blank" rel="noreferrer">Открыть YouTube Studio <ExternalLink size={16} /></a></div><p>Загрузи сохранённый MP4 в Studio. Studio откроется отдельно от XEINTY.</p></div>}
                 </> : <p className="video-hint">Для сборки MP4 нужны обложка и MP3 или WAV.</p>}
                 </>}
               </div>
-                  <PublicationLink key={selected.id} platform="youtube" initial={selected.youtubeLink} onSave={(url) => savePublicationLink([selected], 'youtubeLink', url)} /></div>
+                </div>
               </div>
 
             </div>}
@@ -517,9 +508,6 @@ function App() {
                 <DirectTelegramPublication channels={channels} key={batchBeats.map((beat) => beat.id).join(',')} publish={(channel) => publishTelegram(channel, batchBeats, batchCaption, includeTelegramCover ? batchCoverFile ?? undefined : undefined, false, includeTelegramCover && batchCoverFile ? batchCoverCaption : '')} />}
               {cloudAvailable && (batchFiles.length > 0 || batchBeats.some((beat) => !beat.cloud)) &&
                 <p className="form-hint">Для прямой публикации выбери MP3 из облачной библиотеки. Файлы с устройства можно прикрепить вручную в Telegram.</p>}
-              {batchBeats.length > 0 && <PublicationLink key={batchBeats.map((beat) => beat.id + beat.telegramLink).join(',')} platform="telegram"
-                initial={batchBeats.every((beat) => beat.telegramLink === batchBeats[0].telegramLink) ? batchBeats[0].telegramLink : ''}
-                onSave={(url) => savePublicationLink(batchBeats, 'telegramLink', url)} />}
               {batchBeats.length > 0 && <p className="form-hint">Ссылка сохранится у всех выбранных битов из библиотеки.</p>}
             </div>
             </>}
@@ -538,7 +526,7 @@ function App() {
             <TelegramChannels available={cloudAvailable} channels={channels} loadError={channelLoadError} onConnect={addChannel} onDisconnect={removeChannel} />
           </>}
           {screen === 'overview' && <>
-            <div className="page-heading"><div><h1>Обзор</h1><p>Статистика всех опубликованных битов.</p></div></div><div className="overview-hero"><div className="overview-symbol"><AudioLines size={28} /></div><h2>Статистика появится позже</h2><p>Просмотры и динамика битов станут доступны после подключения Telegram и YouTube. Сейчас источники не подключены.</p><button className="outline-button" onClick={() => navigate('library')}>Вернуться к битам <ArrowRight size={18} /></button></div><div className="future-grid"><div><Radio size={22} /><strong>Telegram</strong><span>Статистика постов канала</span></div><div><Disc3 size={22} /><strong>YouTube</strong><span>Просмотры и публикации</span></div></div>
+            <div className="page-heading"><div><h1>Статистика</h1><p>Статистика всех опубликованных битов.</p></div></div><div className="overview-hero"><div className="overview-symbol"><AudioLines size={28} /></div><h2>Статистика появится позже</h2><p>Просмотры и динамика битов станут доступны после подключения Telegram и YouTube. Сейчас источники не подключены.</p><button className="outline-button" onClick={() => navigate('library')}>Вернуться к битам <ArrowRight size={18} /></button></div><div className="future-grid"><div><Radio size={22} /><strong>Telegram</strong><span>Статистика постов канала</span></div><div><Disc3 size={22} /><strong>YouTube</strong><span>Просмотры и публикации</span></div></div>
           </>}
           {screen === 'detail' && selected && <>
             <button className="back-link" onClick={() => navigate('library')}><ArrowLeft size={17} /> Все биты</button><section className="detail-hero"><Cover beat={selected} className="detail-cover" /><div className="detail-identity"><div className="eyebrow">{selected.isDemo ? 'Демо-проект' : 'Черновик'}</div><h1>{selected.title}</h1><p>{selected.tags}</p><div className="meta-row"><span>{selected.bpm} BPM</span><i /><span>{selected.key}</span></div><div className="detail-audio">{selected.audioUrl ? <><FileAudio2 size={17} /><span>{selected.audioName}</span><audio src={selected.audioUrl} controls preload="metadata" /></> : <><Music2 size={18} /><span>{selected.isDemo ? 'Аудио для этого демо-бита не загружено' : 'Аудиофайл не добавлен'}</span></>}</div></div></section>

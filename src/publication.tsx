@@ -1,48 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { TelegramChannel, TelegramPublication } from './cloud-beats'
 
-export function PublicationLink({ platform, initial, onSave }: {
-  platform: 'telegram' | 'youtube'
-  initial: string
-  onSave: (url: string) => Promise<void>
-}) {
-  const [url, setUrl] = useState(initial)
-  const [status, setStatus] = useState('')
-  const [saving, setSaving] = useState(false)
-  const label = platform === 'telegram' ? 'Ссылка на пост Telegram' : 'Ссылка на видео YouTube'
-
-  async function save() {
-    try {
-      const parsed = new URL(url.trim())
-      const valid = platform === 'telegram'
-        ? parsed.hostname === 't.me' && /^\/(?:s\/|c\/)?[\w]+\/\d+(?:\/\d+)?\/?$/.test(parsed.pathname)
-        : (parsed.hostname === 'youtu.be' && /^\/[\w-]+\/?$/.test(parsed.pathname)) ||
-          (['www.youtube.com', 'youtube.com', 'm.youtube.com'].includes(parsed.hostname) &&
-            ((parsed.pathname === '/watch' && /^[\w-]+$/.test(parsed.searchParams.get('v') ?? '')) || /^\/(shorts|live)\/[\w-]+\/?$/.test(parsed.pathname)))
-      if (parsed.protocol !== 'https:' || !valid) throw new Error()
-    } catch {
-      setStatus('Вставь полную ссылку на опубликованный пост или видео.')
-      return
-    }
-    setSaving(true)
-    setStatus('')
-    try {
-      await onSave(url.trim())
-      setStatus('Ссылка сохранена')
-    } catch {
-      setStatus('Не удалось сохранить все изменения. Попробуй ещё раз.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return <form className="publication-link" onSubmit={(event) => { event.preventDefault(); void save() }}>
-    <label className="field"><span>{label}</span><input type="url" required value={url} disabled={saving} onChange={(event) => { setUrl(event.target.value); setStatus('') }} /></label>
-    <button className="copy-button" disabled={saving || !url.trim()}>{saving ? 'Сохраняем…' : 'Сохранить ссылку'}</button>
-    {status && <p className="form-hint" role="status">{status}</p>}
-  </form>
-}
-
 export function DirectTelegramPublication({ publish, channels }: {
   channels: TelegramChannel[]
   publish: (channel: string) => Promise<TelegramPublication>

@@ -388,3 +388,6 @@ input, textarea { caret-color: #fff; }
 .caption-tags button:disabled { opacity: .5; }
 .caption-template textarea { min-height: 82px; padding: 12px; border: 1px solid #ffffff30; border-radius: 9px; color: #f3f3f2; background: #111112; resize: vertical; }
 @media (max-width: 600px) { .bottom-nav { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+
+.wordmark { display: inline-grid; width: 48px; height: 48px; place-items: center; flex: none; }
+.wordmark img { width: 48px; height: 48px; object-fit: contain; display: block; }
