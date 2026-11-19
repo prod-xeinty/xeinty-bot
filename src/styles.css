@@ -334,7 +334,7 @@ input, textarea { caret-color: #fff; }
 .stats-metric-card dd span { color: #a2a2a3; }
 .stats-coverage { display: grid; gap: 3px; }
 .stats-list-heading { display: flex; align-items: baseline; justify-content: space-between; margin-top: 18px; }
-.overview-hero.youtube-stats .stats-list-heading h2, .youtube-beat-views h3 { margin: 0; font-size: 16px; }
+.overview-hero.youtube-stats .stats-list-heading h2 { margin: 0; font-size: 16px; }
 .youtube-stats-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; margin-top: 12px; }
 .youtube-stats-list { list-style: none; margin: 10px 0 0; padding: 0; border: 1px solid #ffffff20; border-radius: 14px; background: #11111266; }
 .youtube-stats-list li + li { border-top: 1px solid #ffffff16; }
@@ -361,7 +361,6 @@ input, textarea { caret-color: #fff; }
 .stats-row-arrow { color: #a2a2a3; transition: transform var(--dur-control) var(--ease-press), color var(--dur-control) var(--ease-press); }
 .youtube-stats-list button:hover, .youtube-stats-list button:focus-visible { background: #ffffff0c; }
 .youtube-stats-list button:hover .stats-row-arrow, .youtube-stats-list button:focus-visible .stats-row-arrow { transform: translateX(2px); color: #f4f4f2; }
-.youtube-beat-views { margin-bottom: 14px; }
 .overview-symbol { width: 56px; height: 56px; display: grid; place-items: center; margin-bottom: 20px; border: 1px solid #ffffff25; border-radius: 13px; background: #303032; }
 .overview-hero h2 { margin: 12px 0 18px; font-size: clamp(32px, 4vw, 48px); font-weight: 600; line-height: 1.1; letter-spacing: -.05em; animation: text-reveal 360ms var(--ease-enter) 35ms both; }
 .overview-hero h2 em { font-style: normal; color: #aaa; }
@@ -701,6 +700,10 @@ input, textarea { caret-color: #fff; }
 .history-row-body strong { font-size: 13px; }
 .history-row-body small { color: #b8b8b8; }
 .history-row-body p { margin: 0; }
+.publication-counters { display: flex; flex-wrap: wrap; gap: 5px 12px; margin: 3px 0 0; }
+.publication-counters > div { display: flex; align-items: baseline; gap: 5px; font-size: 11px; }
+.publication-counters dt { color: #b8b8b8; }
+.publication-counters dd { margin: 0; color: #efefee; font-weight: 650; font-variant-numeric: tabular-nums; }
 .history-open { padding: 0; width: 40px; justify-content: center; }
 .publication-history .history-add { margin-top: 14px; }
 .history-add h3 { margin: 0 0 12px; font-size: 15px; }

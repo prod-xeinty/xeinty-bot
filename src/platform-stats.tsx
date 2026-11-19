@@ -43,21 +43,16 @@ function linksFor(beat: LinkedBeat, platform: StatsPlatform) {
   return getBeatPublications(beat).filter((post) => post.platform === platform).map((post) => post.url)
 }
 
-function readMetrics(stats: PlatformStats | undefined, beat: LinkedBeat, platform: StatsPlatform) {
-  if (!beat.cloud || !stats) return undefined
+function beatViews(stats: PlatformStats | undefined, beat: LinkedBeat, platform: StatsPlatform) {
+  if (!beat.cloud || !stats) return null
   const links = new Set(linksFor(beat, platform))
-  const unique = new Map<string, PlatformStats['entries'][number]>()
+  const unique = new Map<string, number>()
   for (const entry of stats.entries) {
-    if (entry.beatId === beat.id && links.has(entry.link)) unique.set(entry.mediaKey ?? entry.link, entry)
-  }
-  const totals: PostMetrics & {restricted: boolean} = {views: null, restricted: false}
-  for (const entry of unique.values()) {
-    if (entry.restricted) totals.restricted = true
-    for (const key of platformMetrics[platform]) {
-      if (typeof entry[key] === 'number') totals[key] = (totals[key] ?? 0) + entry[key]
+    if (entry.beatId === beat.id && links.has(entry.link) && typeof entry.views === 'number') {
+      unique.set(entry.mediaKey ?? entry.link, entry.views)
     }
   }
-  return totals
+  return unique.size ? [...unique.values()].reduce((total, views) => total + views, 0) : null
 }
 
 const chartDay = new Intl.DateTimeFormat('ru-RU', {day: 'numeric', month: 'short', timeZone: 'UTC'})
@@ -122,7 +117,7 @@ export function StatsOverview({ platform, setPlatform, beats, state, openBeat, o
 }) {
   const linked = beats.filter((beat) => beat.cloud && linksFor(beat, platform).length > 0)
   const result = state.stats
-  const rows = linked.map((beat) => ({ ...beat, views: readMetrics(result, beat, platform)?.views ?? null }))
+  const rows = linked.map((beat) => ({ ...beat, views: beatViews(result, beat, platform) }))
     .sort((a, b) => (b.views ?? -1) - (a.views ?? -1))
   return <section className="overview-hero youtube-stats" aria-label="Сводка по площадкам">
     <div className="publish-mode stats-platform-switch" role="group" aria-label="Площадка"
@@ -155,21 +150,5 @@ export function StatsOverview({ platform, setPlatform, beats, state, openBeat, o
         </button>
       </li>)}</ul>
     </>}
-  </section>
-}
-
-export function BeatPlatformStats({ beat, platform, state, openChannels }: {
-  beat: LinkedBeat; platform: StatsPlatform; state: StatsState; openChannels: () => void
-}) {
-  if (linksFor(beat, platform).length === 0) return null
-  const metrics = readMetrics(state.stats, beat, platform)
-  return <section className="youtube-beat-views" aria-label={'Статистика ' + platformNames[platform]}>
-    <h3>{platformNames[platform]}</h3>
-    <MetricCards platform={platform} metrics={metrics} />
-    {!beat.cloud && <p className="form-hint">Перенеси бит в облако, чтобы получать статистику.</p>}
-    {beat.cloud && state.stats && metrics?.views == null && <p className="form-hint">{metrics?.restricted
-          ? 'Проверь подключение закрытого канала и права администратора во вкладке «Каналы».'
-          : 'Площадка пока не вернула просмотры по этой ссылке.'}</p>}
-    {beat.cloud && <StatsControls state={state} openChannels={openChannels} />}
   </section>
 }

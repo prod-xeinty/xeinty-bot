@@ -94,13 +94,11 @@ export function PublicationHistory({ beat, channels, stats, save, openPublicatio
       const channel = metrics?.channel ?? (href ? channelName(post, channels) : '')
       const scheduled = post.publishAt && Date.parse(post.publishAt) > Date.now()
       const status = post.platform === 'telegram' && metrics?.mediaKey ? 'Опубликовано' : visibilityNames.get(metrics?.visibility ?? '')
-      const metricsText = [
-        typeof metrics?.views === 'number' ? numbers.format(metrics.views) + ' просм.' : '',
-        typeof metrics?.likes === 'number' ? numbers.format(metrics.likes) + ' лайков' : '',
-        typeof metrics?.reactions === 'number' ? numbers.format(metrics.reactions) + ' реакций' : '',
-        typeof metrics?.comments === 'number' ? numbers.format(metrics.comments) + ' коммент.' : '',
-        typeof metrics?.forwards === 'number' ? numbers.format(metrics.forwards) + ' пересылок' : '',
-      ].filter(Boolean).join(' · ')
+      const telegram = post.platform === 'telegram'
+      const counters = [
+        [telegram ? 'Просмотры поста' : 'Просмотры', metrics?.views],
+        [telegram ? 'Реакции' : 'Лайки', telegram ? metrics?.reactions : metrics?.likes],
+      ].flatMap(([label, value]) => typeof value === 'number' ? [{label, value}] : [])
       return <li key={post.platform + ':' + post.url} className="history-row">
         <span className="platform-icon" aria-hidden="true">{post.platform === 'telegram' ? <Send size={16} /> : <Play size={17} />}</span>
         <div className="history-row-body">
@@ -108,7 +106,10 @@ export function PublicationHistory({ beat, channels, stats, save, openPublicatio
           <small>{post.savedAt ? 'Добавлено ' + dates.format(Date.parse(post.savedAt)) : 'Дата добавления неизвестна'}</small>
           {post.publishAt && <YoutubeReleaseTime publishAt={post.publishAt} />}
           {!scheduled && status && <small>{status}</small>}
-          {metricsText && <small>{metricsText}</small>}
+          {counters.length > 0 && <dl className="publication-counters">
+            {counters.map(({label, value}) => <div key={label}><dt>{label}</dt><dd>{numbers.format(value)}</dd></div>)}
+          </dl>}
+          {metrics?.restricted && <small>Проверь подключение и права канала во вкладке «Каналы».</small>}
         </div>
         {href && <a className="outline-button history-open" href={href} target="_blank" rel="noreferrer" aria-label={'Открыть публикацию ' + names[post.platform]}><ArrowUpRight size={17} /></a>}
       </li>
