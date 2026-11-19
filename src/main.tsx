@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
 import './styles.css'
+import { SplashGate } from './SplashScreen'
 
 class AppBoundary extends React.Component<React.PropsWithChildren, { failed: boolean }> {
   state = { failed: false }
@@ -18,6 +19,10 @@ class AppBoundary extends React.Component<React.PropsWithChildren, { failed: boo
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <AppBoundary><App /></AppBoundary>
+    <AppBoundary>
+      <SplashGate>
+        <App />
+      </SplashGate>
+    </AppBoundary>
   </React.StrictMode>,
 )
