@@ -4,8 +4,9 @@ import { PlannedReleases } from './planned-releases'
 import { usePlatformStats, StatsOverview } from './platform-stats'
 import xeintyLogo from './assets/xeinty-logo.png'
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
-import { ArrowLeft, ArrowRight, AudioLines, Check, ChevronRight, CircleHelp, Clipboard, Download, ExternalLink, FileAudio2, ImagePlus, Link2, ListMusic, Music2, Ellipsis, Plus, Radio, Send, Trash2, UploadCloud } from 'lucide-react'
+import { ArrowLeft, ArrowRight, AudioLines, Check, ChevronDown, ChevronRight, ChevronUp, CircleHelp, Clipboard, Download, ExternalLink, FileAudio2, ImagePlus, Link2, ListMusic, Music2, Ellipsis, Plus, Radio, Send, Trash2, UploadCloud, X } from 'lucide-react'
 import { AudioDock, PlayPauseIcon, useAudioPlayer } from './audio-player'
+import { BeatSearch, defaultLibraryFilters, LibraryControls, matchBeats, refineLibrary } from './beat-library'
 import { getTelegramWebApp } from './telegram'
 import { makeStaticVideo, videoProfileLabel, type VideoStage } from './video'
 import { saveVideoFile } from './save-video'
@@ -74,6 +75,9 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
   const [toast, setToast] = useState('')
   const [form, setForm] = useState({ title: '', bpm: '', key: '', tags: '' })
   const [audioFile, setAudioFile] = useState<File | null>(null)
+  const [libraryFilters, setLibraryFilters] = useState(defaultLibraryFilters)
+  const [publishQuery, setPublishQuery] = useState('')
+  const [batchQuery, setBatchQuery] = useState('')
   const [batchSelectedIds, setBatchSelectedIds] = useState<string[]>([])
   const [batchFiles, setBatchFiles] = useState<File[]>([])
   const [batchCaption, setBatchCaption] = useState('')
@@ -121,6 +125,10 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
   }
   const savedAudioBeats = beats.filter((beat) => !beat.isDemo && (beat.audioFile || beat.audioUrl))
   const batchBeats = batchSelectedIds.flatMap((id) => savedAudioBeats.filter((beat) => beat.id === id))
+  const libraryBeats = screen === 'library' ? refineLibrary(beats, libraryFilters) : []
+  const publicationBeats = beats.filter((beat) => !beat.isDemo)
+  const matchingPublicationBeats = matchBeats(publicationBeats, publishQuery)
+  const matchingBatchBeats = matchBeats(savedAudioBeats, batchQuery)
   const cloudAvailable = cloudConfigured() && Boolean(webApp?.initData)
   const [statsPlatform, setStatsPlatform] = useState<'youtube' | 'telegram'>('youtube')
   const statsView = (platform: typeof statsPlatform) => {
@@ -307,6 +315,18 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
     setBatchSelectedIds(next)
   }
 
+  function moveBatchBeat(id: string, offset: number) {
+    setBatchSelectedIds((items) => {
+      const index = items.indexOf(id)
+      const destination = index + offset
+      if (index < 0 || destination < 0 || destination >= items.length) return items
+      const next = [...items]
+      next.splice(index, 1)
+      next.splice(destination, 0, id)
+      return next
+    })
+  }
+
   function chooseBatch(files: File[]) {
     if (batchSelectedIds.length + files.length > 10) { notify('В одну пачку можно добавить не больше 10 аудиофайлов'); return }
     setBatchFiles(files)
@@ -402,7 +422,7 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
     setConfirmDelete(false)
     navigate('detail')
   }
-  function openPublish(beat?: Beat, mode: 'single' | 'batch' = 'single') { if (beat && !beat.isDemo) setSelectedId(beat.id); setPublishMode(mode); setPublicationPlatform('telegram'); navigate('publish') }
+  function openPublish(beat?: Beat, mode: 'single' | 'batch' = 'single') { if (beat && !beat.isDemo) { setSelectedId(beat.id); setPublishQuery('') } setPublishMode(mode); setPublicationPlatform('telegram'); navigate('publish') }
   async function persistBeat(beat: Beat, publicationLinks?: PublicationLinks) {
     if (!beat.cloud) return saveBeatMetadata(storedBeat(beat))
     if (!webApp?.initData) throw new Error('Telegram session required')
@@ -685,7 +705,7 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
             </section>
             <section className="tools-section"><div className="section-heading"><h2>Рабочие шаги</h2></div><div className="tool-grid"><button style={staggerStyle(0)} onClick={() => openBeat(latest, 'data')}><ListMusic size={20} /><span>Параметры</span></button><button style={staggerStyle(1)} onClick={() => openPublish(latest)}><Clipboard size={20} /><span>Публикация</span></button><button style={staggerStyle(2)} onClick={() => openBeat(latest, 'publications')}><Link2 size={20} /><span>Публикации</span></button></div></section>
             <button className="upload-banner" onClick={() => navigate('create')}><span className="upload-banner-icon"><UploadCloud size={23} /></span><span><strong>Добавить свой бит</strong><small>Обложка, аудио, BPM и теги</small></span><span className="upload-banner-arrow"><ArrowRight size={18} /></span></button>
-            <section className="list-section"><div className="list-header"><div><h2>Недавние проекты</h2></div><span className="demo-pill">{beats.every((beat) => beat.isDemo) ? 'Демо' : 'Демо и черновики'}</span></div><div className="beat-list">{beats.map((beat, index) => <button className="beat-row" key={beat.id} style={staggerStyle(index)} onClick={() => openBeat(beat)}>{beat.isDemo ? <span className="row-wave"><Waveform /></span> : <Cover beat={beat} className="row-cover" />}<span className="row-main"><strong>{beat.title}</strong><small>{beat.bpm} BPM · {beat.key}</small></span><span className="row-meta">{beat.cloud ? 'Облако' : beat.isDemo ? beat.status : 'На устройстве'}</span><ArrowRight className="row-arrow" size={18} /></button>)}</div><p className="demo-note"><CircleHelp size={15} /> {cloudAvailable ? 'Облачные биты доступны в Telegram на других устройствах. Локальные записи можно перенести из карточки бита.' : 'Примеры показывают интерфейс. Пока свои биты хранятся только на этом устройстве.'}</p></section>
+            <section className="list-section"><div className="list-header"><h2>Библиотека битов</h2></div><LibraryControls filters={libraryFilters} onChange={setLibraryFilters} count={libraryBeats.length} total={beats.length} /><div className="beat-list">{libraryBeats.map((beat, index) => <button className="beat-row" key={beat.id} style={staggerStyle(index)} onClick={() => openBeat(beat)}>{beat.isDemo ? <span className="row-wave"><Waveform /></span> : <Cover beat={beat} className="row-cover" />}<span className="row-main"><strong>{beat.title}</strong><small>{beat.bpm} BPM · {beat.key}</small></span><span className="row-meta">{beat.cloud ? 'Облако' : beat.isDemo ? beat.status : 'На устройстве'}</span><ArrowRight className="row-arrow" size={18} /></button>)}</div>{!libraryBeats.length && <p className="form-hint library-empty">По этому запросу ничего не найдено.</p>}<p className="demo-note"><CircleHelp size={15} /> {cloudAvailable ? 'Облачные биты доступны в Telegram на других устройствах. Локальные записи можно перенести из карточки бита.' : 'Примеры показывают интерфейс. Пока свои биты хранятся только на этом устройстве.'}</p></section>
           </>}
           {screen === 'create' && <>
             <div className="page-heading"><div><h1>Новый бит</h1><p>Добавь параметры, обложку и аудио для предпросмотра.</p></div></div>
@@ -707,9 +727,12 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
               }}
               openComposer={() => { setPublishMode('single'); setPublicationPlatform('youtube') }} />}
             {publishMode === 'single' && <div className="publish-stage" key="single">
-              {beats.some((beat) => !beat.isDemo) ? <div className="publish-beats" role="group" aria-label="Выбрать бит">{beats.filter((beat) => !beat.isDemo).map((beat, index) => <button style={staggerStyle(index)} key={beat.id} className={selected.id === beat.id ? 'is-active' : ''} onClick={() => { setSelectedId(beat.id); setVideoError('') }}><Cover beat={beat} className="publish-beat-cover" /><span><strong>{beat.title}</strong><small>{beat.bpm} BPM · {beat.key}</small></span><Check size={16} className="publish-beat-check" /></button>)}</div> : <div className="publish-empty"><FileAudio2 size={25} /><strong>Пока нет своих битов</strong><p>Сначала добавь аудиофайл — затем здесь появятся тексты и сборка видео.</p><button className="outline-button" onClick={() => navigate('create')}>Добавить бит <ArrowRight size={17} /></button></div>}
+              {publicationBeats.length ? <>
+                <div className="publish-beat-search"><BeatSearch label="Поиск бита для публикации" value={publishQuery} onChange={setPublishQuery} /></div>
+                {matchingPublicationBeats.length ? <div className="publish-beats" role="group" aria-label="Выбрать бит">{matchingPublicationBeats.map((beat, index) => <button style={staggerStyle(index)} key={beat.id} className={selected.id === beat.id ? 'is-active' : ''} aria-pressed={selected.id === beat.id} onClick={() => { setSelectedId(beat.id); setVideoError('') }}><Cover beat={beat} className="publish-beat-cover" /><span><strong>{beat.title}</strong><small>{beat.bpm} BPM · {beat.key}</small></span><Check size={16} className="publish-beat-check" /></button>)}</div> : <p className="form-hint">По этому запросу ничего не найдено.</p>}
+              </> : <div className="publish-empty"><FileAudio2 size={25} /><strong>Пока нет своих битов</strong><p>Сначала добавь аудиофайл — затем здесь появятся тексты и сборка видео.</p><button className="outline-button" onClick={() => navigate('create')}>Добавить бит <ArrowRight size={17} /></button></div>}
               {!selected.isDemo && <div className="detail-section">
-              <div className="section-intro"><h2>Для площадок</h2><p>Подстрой тексты и подготовь видео для выбранного бита.</p></div>
+              <div className="section-intro"><h2>Для площадок</h2><p>Выбран бит · {selected.title}</p></div>
                 <div className="platform-switch" role="tablist" aria-label="Площадка" style={{ '--tab-i': publicationPlatform === 'youtube' ? 1 : 0 } as CSSProperties}><button role="tab" aria-selected={publicationPlatform === 'telegram'} className={publicationPlatform === 'telegram' ? 'is-active' : ''} onClick={() => setPublicationPlatform('telegram')}>Telegram</button><button role="tab" aria-selected={publicationPlatform === 'youtube'} className={publicationPlatform === 'youtube' ? 'is-active' : ''} onClick={() => setPublicationPlatform('youtube')}>YouTube</button></div>
               <div className="publication-grid">
                 <div className={`publication-card ${publicationPlatform === 'telegram' ? 'is-current' : ''}`}><div className="publication-card-head"><div className="platform-icon telegram-icon"><Send size={20} /></div><div><span>TELEGRAM</span><h3>Подпись к посту</h3></div></div><textarea aria-label="Подпись для Telegram" placeholder="Добавить подпись (необязательно)" value={selected.telegramCaption} maxLength={1024} onBlur={(e) => rememberHashtags(e.currentTarget.value)} onChange={(e) => updateBeat({ telegramCaption: e.target.value })} />{captionTools(selected.telegramCaption, (telegramCaption) => updateBeat({ telegramCaption }))}<label className="batch-cover-toggle"><input type="checkbox" checked={includeTelegramCover} onChange={(event) => toggleTelegramCover(event.target.checked)} /><span>Прикладывать обложку к посту</span></label>{cloudAvailable && selected.cloud && <DirectTelegramPublication channels={channels} initData={webApp?.initData ?? ''} onRecovered={applyTelegramResult} key={selected.id} publishedCount={selected.telegramLink.trim() ? 1 : 0} publish={(attemptId, channel, republish) => publishTelegram(attemptId, channel, [selected], selected.telegramCaption, undefined, includeTelegramCover, '', republish)} />}
@@ -751,7 +774,23 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
               <div className="section-intro"><h2>Пачка битов</h2><p>Несколько аудиофайлов для одного альбома Telegram.</p></div>
             <div className="form-panel batch-panel">
               <div className="batch-library"><div className="batch-library-head"><strong>Выбрать из библиотеки</strong><span>{batchSelectedIds.length + batchFiles.length} / 10</span></div>
-                {savedAudioBeats.length ? <div className="batch-beat-list">{savedAudioBeats.map((beat, index) => <button style={staggerStyle(index)} type="button" key={beat.id} className={batchSelectedIds.includes(beat.id) ? 'is-active' : ''} aria-pressed={batchSelectedIds.includes(beat.id)} onClick={() => toggleBatchBeat(beat.id)}><Cover beat={beat} className="publish-beat-cover" /><span><strong>{beat.title}</strong><small>{beat.bpm} BPM · {beat.key}</small></span><Check size={17} /></button>)}</div> : <div className="batch-library-empty"><p>В библиотеке пока нет битов с аудиофайлом.</p><button type="button" onClick={() => navigate('create')}>Добавить бит <ArrowRight size={15} /></button></div>}
+                {savedAudioBeats.length ? <>
+                  <BeatSearch label="Поиск бита для пачки" value={batchQuery} onChange={setBatchQuery} />
+                  {matchingBatchBeats.length ? <div className="batch-beat-list">{matchingBatchBeats.map((beat, index) => <button style={staggerStyle(index)} type="button" key={beat.id} className={batchSelectedIds.includes(beat.id) ? 'is-active' : ''} aria-pressed={batchSelectedIds.includes(beat.id)} onClick={() => toggleBatchBeat(beat.id)}><Cover beat={beat} className="publish-beat-cover" /><span><strong>{beat.title}</strong><small>{beat.bpm} BPM · {beat.key}</small></span><Check size={17} /></button>)}</div> : <p className="form-hint">По этому запросу ничего не найдено.</p>}
+                  {batchBeats.length > 0 && <div className="batch-selection">
+                    <strong>Порядок отправки</strong>
+                    <ol className="batch-selection-list" aria-label="Порядок битов в пачке">
+                      {batchBeats.map((beat, index) => <li key={beat.id}>
+                        <span>{beat.title}</span>
+                        <div className="batch-selection-actions">
+                          <button type="button" aria-label={"Поднять " + beat.title} disabled={index === 0} onClick={() => moveBatchBeat(beat.id, -1)}><ChevronUp size={16} /></button>
+                          <button type="button" aria-label={"Опустить " + beat.title} disabled={index === batchBeats.length - 1} onClick={() => moveBatchBeat(beat.id, 1)}><ChevronDown size={16} /></button>
+                          <button type="button" aria-label={"Убрать " + beat.title} onClick={() => toggleBatchBeat(beat.id)}><X size={16} /></button>
+                        </div>
+                      </li>)}
+                    </ol>
+                  </div>}
+                </> : <div className="batch-library-empty"><p>В библиотеке пока нет битов с аудиофайлом.</p><button type="button" onClick={() => navigate('create')}>Добавить бит <ArrowRight size={15} /></button></div>}
               </div>
               <div className="batch-import"><span>ИЛИ ДОБАВЬ С УСТРОЙСТВА</span><label className="upload-zone"><input type="file" multiple accept=".mp3,.wav,audio/mpeg,audio/wav" onChange={(event) => chooseBatch(Array.from(event.target.files ?? []))} /><FileAudio2 size={26} /><strong>{batchFiles.length ? `${batchFiles.length} аудиофайлов` : 'Выбрать аудиофайлы'}</strong><span>MP3 или WAV</span></label></div>
               {batchFiles.length > 0 && <ol className="batch-file-list">{batchFiles.map((file, index) => <li key={`${index}-${file.name}`}>{file.name}</li>)}</ol>}
@@ -765,7 +804,7 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
               {captionTools(batchCaption, setBatchCaption)}
 
               {cloudAvailable && batchBeats.length > 0 && batchBeats.every((beat) => beat.cloud) && batchFiles.length === 0 &&
-                <DirectTelegramPublication channels={channels} initData={webApp?.initData ?? ''} onRecovered={applyTelegramResult} key={batchBeats.map((beat) => beat.id).join(',')} publishedCount={batchBeats.filter((beat) => beat.telegramLink.trim()).length} publish={(attemptId, channel, republish) => publishTelegram(attemptId, channel, batchBeats, batchCaption, includeTelegramCover ? batchCoverFile ?? undefined : undefined, false, includeTelegramCover && batchCoverFile ? batchCoverCaption : '', republish)} />}
+                <DirectTelegramPublication channels={channels} initData={webApp?.initData ?? ''} onRecovered={applyTelegramResult} key={batchBeats.map((beat) => beat.id).sort().join(',')} publishedCount={batchBeats.filter((beat) => beat.telegramLink.trim()).length} publish={(attemptId, channel, republish) => publishTelegram(attemptId, channel, batchBeats, batchCaption, includeTelegramCover ? batchCoverFile ?? undefined : undefined, false, includeTelegramCover && batchCoverFile ? batchCoverCaption : '', republish)} />}
               {cloudAvailable && (batchFiles.length > 0 || batchBeats.some((beat) => !beat.cloud)) &&
                 <p className="form-hint">Для прямой публикации выбери MP3 из облачной библиотеки. Файлы с устройства можно прикрепить вручную в Telegram.</p>}
               {batchBeats.length > 0 && <p className="form-hint">Ссылка сохранится у всех выбранных битов из библиотеки.</p>}
