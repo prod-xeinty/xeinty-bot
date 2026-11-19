@@ -60,8 +60,10 @@ export async function createCloudBeat(initData: string, beat: StoredBeat, audio:
   return plan.id
 }
 
-export async function updateCloudBeat(initData: string, beat: StoredBeat): Promise<void> {
-  await call(initData, 'update', { id: beat.id, beat })
+export type PublicationLinks = Partial<Pick<StoredBeat, 'telegramLink' | 'youtubeLink'>>
+
+export async function updateCloudBeat(initData: string, beat: StoredBeat, publicationLinks?: PublicationLinks): Promise<void> {
+  await call(initData, 'update', { id: beat.id, beat, publicationLinks })
 }
 
 export async function replaceCloudCover(initData: string, id: string, file: File): Promise<void> {
@@ -89,9 +91,20 @@ export async function publishCloudTelegram(initData: string, payload: {
   caption: string
   useSavedCover?: boolean
   coverCaption?: string
+  republish?: boolean
   cover?: string
 }): Promise<TelegramPublication> {
   return call(initData, 'publish-telegram', payload)
+}
+
+export type ChannelProfile = { title?: string; username?: string | null; avatar?: string | null; subscribers?: number | null; needsAccess?: boolean }
+
+export function loadTelegramChannelProfile(initData: string, channel: string) {
+  return call<ChannelProfile>(initData, 'telegram-channel-profile', { channel })
+}
+
+export function loadYoutubeChannelProfile(initData: string) {
+  return call<ChannelProfile>(initData, 'youtube-profile')
 }
 
 export type TelegramChannel = { id: string; title: string; username: string | null }
@@ -126,7 +139,7 @@ export function disconnectYoutube(initData: string) {
 }
 
 export function startYoutubeUpload(initData: string, payload: {
-  uploadId: string; beatId: string; size: number; mimeType: string; madeForKids: boolean
+  uploadId: string; beatId: string; size: number; mimeType: string; madeForKids: boolean; republish?: boolean
 }) {
   return call<{ ready: boolean }>(initData, 'youtube-start', payload)
 }

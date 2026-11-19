@@ -1,9 +1,51 @@
 import { Dropdown } from './choice-menu'
-import { useState, type FormEvent } from 'react'
-import type { TelegramChannel } from './cloud-beats'
+import { useEffect, useState, type FormEvent } from 'react'
+import { loadTelegramChannelProfile, type ChannelProfile, type TelegramChannel } from './cloud-beats'
 
-export function TelegramChannels({ available, channels, loadError, onConnect, onDisconnect }: {
+const subscriberFormat = new Intl.NumberFormat('ru-RU')
+
+export function ChannelIdentity({ title, address, profile, loading = false }: {
+  title: string; address?: string; profile?: ChannelProfile; loading?: boolean
+}) {
+  const name = profile?.title || title
+  const avatar = profile?.avatar
+  const [failedAvatar, setFailedAvatar] = useState<string>()
+  return <div className="channel-identity">
+    <span className="channel-avatar" aria-hidden="true">
+      {avatar && failedAvatar !== avatar
+        ? <img src={avatar} alt="" referrerPolicy="no-referrer" onError={() => setFailedAvatar(avatar)} />
+        : name.trim().slice(0, 1).toUpperCase()}
+    </span>
+    <div className="channel-identity-text">
+      <strong>{name}</strong>
+      {address && <small>{address}</small>}
+      <small>{loading ? 'Загружаем данные канала…' : typeof profile?.subscribers === 'number'
+        ? 'Подписчики: ' + subscriberFormat.format(profile.subscribers) : 'Число подписчиков недоступно'}</small>
+    </div>
+  </div>
+}
+
+function TelegramChannelIdentity({ initData, channel }: { initData?: string; channel: TelegramChannel }) {
+  const [profile, setProfile] = useState<ChannelProfile>()
+  const [loading, setLoading] = useState(Boolean(initData))
+  useEffect(() => {
+    if (!initData) return
+    let active = true
+    setLoading(true)
+    void loadTelegramChannelProfile(initData, channel.id).then((result) => {
+      if (active) setProfile(result)
+    }).catch(() => {
+      if (active) setProfile(undefined)
+    }).finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [initData, channel.id])
+  const username = profile?.username ?? channel.username
+  return <ChannelIdentity title={channel.title} address={username ? '@' + username : channel.id} profile={profile} loading={loading} />
+}
+
+export function TelegramChannels({ available, initData, channels, loadError, onConnect, onDisconnect }: {
   available: boolean
+  initData?: string
   channels: TelegramChannel[]
   loadError: string
   onConnect: (address: string) => Promise<void>
@@ -40,7 +82,7 @@ export function TelegramChannels({ available, channels, loadError, onConnect, on
       {(error || loadError) && <p className="video-error" role="alert">{error || loadError}</p>}
       {channels.length === 0 && !loadError && <p className="form-hint">Подключённых каналов пока нет.</p>}
       <ul className="telegram-channel-list">{channels.map((channel) => <li key={channel.id}>
-        <div><strong>{channel.title}</strong><small>{channel.username ? '@' + channel.username : channel.id}</small></div>
+        <TelegramChannelIdentity initData={initData} channel={channel} />
         <button type="button" className="outline-button" disabled={busy} onClick={() => void change(() => onDisconnect(channel.id))}>Отключить</button>
       </li>)}</ul>
     </>}

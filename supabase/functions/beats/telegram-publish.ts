@@ -106,3 +106,30 @@ export function readCover(value: unknown): File | undefined {
   if (bytes.length > 2 * 1024 * 1024) throw new TelegramPublishError('Обложка должна быть до 2 МБ.')
   return new File([bytes], `cover.${match[1].split('/')[1]}`, { type: match[1] })
 }
+export async function telegramChannelProfile(id: string) {
+  const [chat, count] = await Promise.all([
+    api<Chat & { photo?: { small_file_id: string } }>('getChat', { chat_id: id }),
+    api<number>('getChatMemberCount', { chat_id: id }).catch(() => null),
+  ])
+  let avatar: string | null = null
+  if (chat.photo?.small_file_id) {
+    try {
+      const file = await api<{ file_path?: string; file_size?: number }>('getFile', { file_id: chat.photo.small_file_id })
+      if (file.file_path && /^[\w./-]+\.jpe?g$/i.test(file.file_path) && !file.file_path.includes('..') && (file.file_size ?? 0) <= 256_000) {
+        const token = Deno.env.get('TELEGRAM_BOT_TOKEN')
+        const response = await fetch('https://api.telegram.org/file/bot' + token + '/' + file.file_path, {
+          signal: AbortSignal.timeout(5500), redirect: 'error',
+        })
+        if (response.ok) {
+          const bytes = new Uint8Array(await response.arrayBuffer())
+          if (bytes.length <= 256_000) {
+            let raw = ''
+            for (let i = 0; i < bytes.length; i += 8192) raw += String.fromCharCode(...bytes.subarray(i, i + 8192))
+            avatar = 'data:image/jpeg;base64,' + btoa(raw)
+          }
+        }
+      }
+    } catch { /* Channel metadata remains available without the image. */ }
+  }
+  return { title: chat.title, username: chat.username, subscribers: count, avatar }
+}
