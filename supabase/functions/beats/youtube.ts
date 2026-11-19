@@ -167,9 +167,8 @@ async function finishUpload(db: SupabaseClient, userId: number, upload: Upload, 
   if (recorded.error) throw recorded.error
   const url = 'https://youtu.be/' + videoId
   const publishAt = upload.publish_at
-  const saved = await db.from('beats').update({ youtube_link: url, youtube_publish_at: publishAt, updated_at: new Date().toISOString() })
-    .eq('id', upload.beat_id).eq('telegram_user_id', userId).select('id').maybeSingle()
-  if (saved.error || !saved.data) return { data: { url, publishAt, saved: false } }
+  const saved = await db.rpc('finish_youtube_publication', { p_upload: upload.id, p_owner: userId })
+  if (saved.error || saved.data !== true) return { data: { url, publishAt, saved: false } }
   return { data: { url, publishAt, saved: true } }
 }
 
@@ -242,7 +241,12 @@ export async function youtubeAction(db: SupabaseClient, userId: number, body: Re
     }
 
     if (action === 'youtube-start') {
-      if (upload) return { data: { ready: true } }
+      if (upload) {
+        if (body.beatId !== upload.beat_id || body.size !== Number(upload.file_size)) {
+          throw new YoutubeError('Сессия привязана к другому файлу или биту.', 409)
+        }
+        return { data: { ready: true } }
+      }
       const { beatId, size, mimeType, madeForKids } = body
       // Older clients only offer a private upload.
       const visibility = body.visibility === undefined ? 'private' : body.visibility

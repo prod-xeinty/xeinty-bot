@@ -83,11 +83,26 @@ export async function remoteFile(url: string, name: string): Promise<File> {
   return new File([blob], name, { type: blob.type })
 }
 
-export type TelegramPublication = { url: string; saved: boolean; warnings: string[] }
+export type TelegramPublication = { url: string; saved: boolean; warnings: string[]; beatIds?: string[] }
+export type TelegramAttempt = { id: string; channel: string; beatIds: string[]; coverSent: boolean; retryAfter: number;
+  stage: 'cover_ready' | 'cover_sending' | 'audio_ready' | 'audio_sending' | 'audio_sent' | 'done' }
+
+export function activeTelegramPublication(initData: string) {
+  return call<{ attempt: TelegramAttempt | null }>(initData, 'telegram-publication-active')
+}
+
+export function resumeTelegramPublication(initData: string, attemptId: string) {
+  return call<TelegramPublication>(initData, 'telegram-publication-resume', { attemptId })
+}
+
+export function resetTelegramPublication(initData: string, attemptId: string) {
+  return call<{ reset: boolean }>(initData, 'telegram-publication-reset', { attemptId })
+}
 
 export async function publishCloudTelegram(initData: string, payload: {
   channel: string
   beatIds: string[]
+  attemptId: string
   caption: string
   useSavedCover?: boolean
   coverCaption?: string
