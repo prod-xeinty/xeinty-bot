@@ -741,3 +741,25 @@ input, textarea { caret-color: #fff; }
 .planned-releases-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px 14px; margin-bottom: 16px; }
 .planned-releases-head .section-intro { margin: 0; }
 .planned-refresh-note { margin: 0 0 12px; }
+
+.beat-search { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 0 10px; border: 1px solid #ffffff2c; border-radius: 13px; background: #141414; color: #ababab; transition: border-color var(--dur-control) var(--ease-press); }
+.beat-search > svg { flex: none; }
+.beat-search:focus-within { border-color: #ffffff80; }
+.beat-search input { appearance: none; flex: 1; width: 100%; min-width: 0; min-height: 44px; padding: 0; border: 0; outline: none; background: transparent; color: #f2f2f2; font: inherit; }
+.beat-search input::placeholder { color: #a8a8a8; }
+.beat-search input::-webkit-search-cancel-button { display: none; }
+.beat-search button, .batch-selection-actions button { appearance: none; display: grid; place-items: center; flex: none; width: 36px; height: 36px; padding: 0; border: 1px solid transparent; border-radius: 9px; background: transparent; color: #e3e3e3; cursor: pointer; transition: background var(--dur-control) var(--ease-press), border-color var(--dur-control) var(--ease-press); }
+.beat-search button:hover, .batch-selection-actions button:not(:disabled):hover { border-color: #ffffff2c; background: #ffffff15; }
+.library-controls { display: grid; gap: 10px; margin-bottom: 12px; }
+.library-filters { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); }
+.library-results { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 6px; min-height: 36px; }
+.library-results .outline-button { min-height: 34px; padding: 0 12px; }
+.library-empty { margin: 0 0 12px; }
+.publish-beat-search { max-width: 440px; margin-bottom: 10px; }
+.batch-selection { display: grid; gap: 8px; font-size: 14px; }
+.batch-selection-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.batch-selection-list li { display: flex; align-items: center; justify-content: space-between; gap: 4px; min-width: 0; padding: 3px 4px 3px 10px; border: 1px solid #ffffff20; border-radius: 11px; background: #ffffff08; }
+.batch-selection-list li > span { min-width: 0; overflow-wrap: anywhere; }
+.batch-selection-actions { display: flex; flex: none; }
+.batch-selection-actions button:disabled { opacity: .3; cursor: default; }
+@media (max-width: 620px) { .beat-search input { font-size: 16px; } }
