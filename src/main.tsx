@@ -21,7 +21,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <AppBoundary>
       <SplashGate>
-        <App />
+        {(ready) => <App onStartupReady={ready} />}
       </SplashGate>
     </AppBoundary>
   </React.StrictMode>,

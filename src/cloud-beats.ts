@@ -41,8 +41,8 @@ async function signedUpload(path: string, token: string, file: File): Promise<vo
   if (!response.ok) throw new Error(`Не удалось загрузить ${file.name}`)
 }
 
-export async function loadCloudBeats(initData: string): Promise<CloudBeat[]> {
-  const result = await call<{ beats: CloudBeat[] }>(initData, 'list')
+export async function loadCloudBeats(initData: string, signal?: AbortSignal): Promise<CloudBeat[]> {
+  const result = await call<{ beats: CloudBeat[] }>(initData, 'list', {}, signal)
   return result.beats.map((beat) => ({ ...beat, cloud: true }))
 }
 

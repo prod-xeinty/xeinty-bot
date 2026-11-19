@@ -1,51 +1,42 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useState, type CSSProperties } from 'react'
 import xeintyLogo from './assets/xeinty-logo.png'
-import { getTelegramWebApp } from './telegram'
 
 type SplashPhase = 'intro' | 'exit' | 'done'
 
 const splashTagline = 'Создавай свой звук'
 const splashChars = Array.from(splashTagline)
 
-export function SplashGate({ children }: { children: React.ReactNode }) {
+export function SplashGate({ children }: { children: (ready: () => void) => React.ReactNode }) {
     const [phase, setPhase] = useState<SplashPhase>('intro')
-    const skipTimerRef = useRef<number | null>(null)
+    const [ready, setReady] = useState(false)
+    const [introElapsed, setIntroElapsed] = useState(false)
+    const markReady = useCallback(() => setReady(true), [])
 
     useEffect(() => {
-        const webApp = getTelegramWebApp()
-        if (webApp) {
-            webApp.setHeaderColor?.('#0c0c0e')
-            webApp.setBackgroundColor?.('#0c0c0e')
-            webApp.ready()
-        }
-
         const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-        const holdMs = reduced ? 360 : 1750
-        const exitMs = reduced ? 160 : 420
-
-        const exitTimer = window.setTimeout(() => setPhase('exit'), holdMs)
-        const doneTimer = window.setTimeout(() => setPhase('done'), holdMs + exitMs)
-        return () => {
-            window.clearTimeout(exitTimer)
-            window.clearTimeout(doneTimer)
-            if (skipTimerRef.current) window.clearTimeout(skipTimerRef.current)
-        }
+        const minimum = window.setTimeout(() => setIntroElapsed(true), reduced ? 360 : 2100)
+        const deadline = window.setTimeout(() => setReady(true), 12_000)
+        return () => { window.clearTimeout(minimum); window.clearTimeout(deadline) }
     }, [])
 
-    function skipSplash() {
-        if (phase !== 'intro') return
-        setPhase('exit')
-        skipTimerRef.current = window.setTimeout(() => setPhase('done'), 320)
-    }
+    useEffect(() => {
+        if (introElapsed && ready) setPhase('exit')
+    }, [introElapsed, ready])
+
+    useEffect(() => {
+        if (phase !== 'exit') return
+        const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        const timer = window.setTimeout(() => setPhase('done'), reduced ? 160 : 420)
+        return () => window.clearTimeout(timer)
+    }, [phase])
 
     return <>
-        {phase !== 'intro' && children}
+        <div hidden={phase === 'intro'}>{children(markReady)}</div>
         {phase !== 'done' && (
             <div
                 className={`splash-screen ${phase === 'exit' ? 'splash-screen--exit' : ''}`}
                 role="status"
-                aria-label={splashTagline}
-                onClick={skipSplash}
+                aria-label="Загружаем библиотеку XEINTY"
             >
                 <div className="splash-frame" aria-hidden="true">
                     <span className="splash-corner splash-corner--tl" />
