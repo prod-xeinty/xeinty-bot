@@ -103,6 +103,18 @@ export function loadTelegramChannelProfile(initData: string, channel: string) {
   return call<ChannelProfile>(initData, 'telegram-channel-profile', { channel })
 }
 
+export type YoutubeStats = {
+  entries: { beatId: string; link: string; views: number | null }[]
+  totalViews: number
+  videosWithViews: number
+  linkedVideos: number
+  fetchedAt: string
+}
+
+export function loadYoutubeStats(initData: string, signal: AbortSignal) {
+  return call<YoutubeStats>(initData, 'youtube-stats', {}, signal)
+}
+
 export function loadYoutubeChannelProfile(initData: string) {
   return call<ChannelProfile>(initData, 'youtube-profile')
 }

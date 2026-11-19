@@ -3,6 +3,7 @@ import type { SupabaseClient } from 'npm:@supabase/supabase-js@2'
 const scope = 'https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly'
 const chunkSize = 2 * 1024 * 1024
 const maxVideoSize = 256 * 1024 * 1024 * 1024
+const videoIdPattern = /^[a-zA-Z0-9_-]{11}$/
 const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
 
 class YoutubeError extends Error {
@@ -100,8 +101,65 @@ async function accessToken(db: SupabaseClient, userId: number, cfg: NonNullable<
   return (await token(cfg, { grant_type: 'refresh_token', refresh_token: refreshToken })).access_token
 }
 
+function linkedVideoId(link: string): string | null {
+  let url: URL
+  try { url = new URL(link) } catch { return null }
+  if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || url.port) return null
+  const path = url.pathname.split('/').filter(Boolean)
+  const host = url.hostname.replace(/^www\./, '')
+  let id: string | null = null
+  if (host === 'youtu.be' && path.length === 1) id = path[0]
+  if (['youtube.com', 'm.youtube.com', 'music.youtube.com'].includes(host)) {
+    if (path.length === 1 && path[0] === 'watch') id = url.searchParams.get('v')
+    if (path.length === 2 && ['shorts', 'live', 'embed'].includes(path[0])) id = path[1]
+  }
+  return id && videoIdPattern.test(id) ? id : null
+}
+
+async function youtubeStats(db: SupabaseClient, userId: number, cfg: NonNullable<ReturnType<typeof config>>): Promise<Result> {
+  const { data, error } = await db.from('beats').select('id,youtube_link')
+    .eq('telegram_user_id', userId).order('created_at', { ascending: false }).limit(200)
+  if (error) throw error
+  const rows = (data ?? []).filter((beat) => beat.youtube_link?.trim()).map((beat) => ({
+    beatId: beat.id as string,
+    link: beat.youtube_link as string,
+    videoId: linkedVideoId(beat.youtube_link),
+  }))
+  const ids = [...new Set(rows.flatMap((row) => row.videoId ? [row.videoId] : []))]
+  const views = new Map<string, number>()
+  if (ids.length) {
+    const access = await accessToken(db, userId, cfg)
+    const batches = Array.from({ length: Math.ceil(ids.length / 50) }, (_, index) => ids.slice(index * 50, index * 50 + 50))
+    await Promise.all(batches.map(async (batch) => {
+      const params = new URLSearchParams({ part: 'statistics', id: batch.join(','), fields: 'items(id,statistics(viewCount))' })
+      const response = await fetch('https://www.googleapis.com/youtube/v3/videos?' + params, {
+        headers: { Authorization: 'Bearer ' + access }, signal: AbortSignal.timeout(10_000),
+      })
+      if (!response.ok) {
+        const failure = await response.json().catch(() => null)
+        const insufficient = failure?.error?.errors?.some((item: { reason?: string }) => item.reason === 'insufficientPermissions') ||
+          failure?.error?.details?.some((item: { reason?: string }) => item.reason === 'ACCESS_TOKEN_SCOPE_INSUFFICIENT')
+        if (response.status === 403 && insufficient) throw new YoutubeError('Обнови доступ к YouTube во вкладке «Каналы».', 403)
+        throw new YoutubeError('Не удалось получить просмотры с YouTube. Попробуй обновить позже.', 502)
+      }
+      const parsed: { items?: { id: string; statistics?: { viewCount?: string } }[] } = await response.json()
+      for (const video of parsed.items ?? []) {
+        const count = video.statistics?.viewCount
+        if (count !== undefined && /^\d+$/.test(count) && Number.isSafeInteger(Number(count))) views.set(video.id, Number(count))
+      }
+    }))
+  }
+  return { data: {
+    entries: rows.map(({ beatId, link, videoId }) => ({ beatId, link, views: videoId ? views.get(videoId) ?? null : null })),
+    totalViews: [...views.values()].reduce((sum, count) => sum + count, 0),
+    videosWithViews: views.size,
+    linkedVideos: ids.length,
+    fetchedAt: new Date().toISOString(),
+  } }
+}
+
 async function finishUpload(db: SupabaseClient, userId: number, upload: Upload, videoId: string): Promise<Result> {
-  if (!/^[a-zA-Z0-9_-]{11}$/.test(videoId)) throw new YoutubeError('YouTube не вернул ID видео.', 502)
+  if (!videoIdPattern.test(videoId)) throw new YoutubeError('YouTube не вернул ID видео.', 502)
   const recorded = await db.from('youtube_uploads').update({ video_id: videoId })
     .eq('id', upload.id).eq('telegram_user_id', userId)
   if (recorded.error) throw recorded.error
@@ -124,6 +182,8 @@ export async function youtubeAction(db: SupabaseClient, userId: number, body: Re
   }
   if (!cfg) return { data: { error: 'Подключение YouTube ещё не настроено.' }, status: 503 }
   try {
+    if (action === 'youtube-stats') return await youtubeStats(db, userId, cfg)
+
     if (action === 'youtube-profile') {
       const access = await accessToken(db, userId, cfg)
       const response = await fetch('https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&mine=true', {
