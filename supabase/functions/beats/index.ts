@@ -1,6 +1,6 @@
 // Deploy with verify_jwt = false: Telegram initData is verified below on every request.
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { channelForPublisher, postAudio, postCover, readCover, TelegramPublishError } from './telegram-publish.ts'
+import { channelForPublisher, postAudio, postCover, readCover, telegramChannelProfile, TelegramPublishError } from './telegram-publish.ts'
 
 import { youtubeAction, youtubeCallback } from './youtube.ts'
 
@@ -163,6 +163,17 @@ Deno.serve(async (request) => {
       return reply({ beats }, 200, origin)
     }
 
+    if (action === 'telegram-channel-profile') {
+      if (typeof body.channel !== 'string' || !/^-100[0-9]{5,16}$/.test(body.channel)) {
+        return reply({ error: 'Некорректный канал' }, 400, origin)
+      }
+      const { data, error } = await db.from('telegram_channels').select('chat_id')
+        .eq('telegram_user_id', userId).eq('chat_id', body.channel).maybeSingle()
+      if (error) throw error
+      if (!data) return reply({ error: 'Канал не подключён' }, 404, origin)
+      return reply(await telegramChannelProfile(body.channel, userId), 200, origin)
+    }
+
     if (action === 'list-telegram-channels') {
       const { data, error } = await db.from('telegram_channels').select('chat_id,title,username')
         .eq('telegram_user_id', userId).order('title')
@@ -201,12 +212,15 @@ Deno.serve(async (request) => {
           caption === null || coverCaption === null || !channel || !/^-100[0-9]{5,16}$/.test(channel)) {
         return reply({ error: 'Выбери канал и до 10 битов. Каждая подпись должна быть до 1024 символов.' }, 400, origin)
       }
-      const { data, error } = await db.from('beats').select('id,audio_name,audio_path,cover_path')
+      const { data, error } = await db.from('beats').select('id,audio_name,audio_path,cover_path,telegram_link')
         .eq('telegram_user_id', userId).in('id', ids)
       if (error) throw error
       const ordered = ids.map((id) => data?.find((beat) => beat.id === id))
       if (ordered.some((beat) => !beat?.audio_path)) {
         return reply({ error: 'Для публикации нужны твои биты с MP3 в облаке' }, 404, origin)
+      }
+      if (body.republish !== true && ordered.some((beat) => beat?.telegram_link?.trim())) {
+        return reply({ error: 'В списке есть уже опубликованные биты. Подтверди «Опубликовать заново».' }, 409, origin)
       }
       const connected = await db.from('telegram_channels').select('chat_id')
         .eq('telegram_user_id', userId).eq('chat_id', channel).maybeSingle()
@@ -324,7 +338,13 @@ Deno.serve(async (request) => {
     if (action === 'update') {
       const beat = input(body.beat)
       if (!beat || typeof body.id !== 'string') return reply({ error: 'Некорректные данные бита' }, 400, origin)
-      const { data, error } = await db.from('beats').update(columns(beat)).eq('id', body.id).eq('telegram_user_id', userId).select('id').maybeSingle()
+      const { telegram_link, youtube_link, ...metadata } = columns(beat)
+      const links = body.publicationLinks
+      const { data, error } = await db.from('beats').update({
+        ...metadata,
+        ...(typeof links?.telegramLink === 'string' ? { telegram_link } : {}),
+        ...(typeof links?.youtubeLink === 'string' ? { youtube_link } : {}),
+      }).eq('id', body.id).eq('telegram_user_id', userId).select('id').maybeSingle()
       if (error) throw error
       return data ? reply({ ok: true }, 200, origin) : reply({ error: 'Бит не найден' }, 404, origin)
     }

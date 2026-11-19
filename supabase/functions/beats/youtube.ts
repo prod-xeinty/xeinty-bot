@@ -1,6 +1,6 @@
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2'
 
-const scope = 'https://www.googleapis.com/auth/youtube.upload'
+const scope = 'https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly'
 const chunkSize = 2 * 1024 * 1024
 const maxVideoSize = 256 * 1024 * 1024 * 1024
 const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
@@ -123,6 +123,30 @@ export async function youtubeAction(db: SupabaseClient, userId: number, body: Re
   }
   if (!cfg) return { data: { error: 'Подключение YouTube ещё не настроено.' }, status: 503 }
   try {
+    if (action === 'youtube-profile') {
+      const access = await accessToken(db, userId, cfg)
+      const response = await fetch('https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&mine=true', {
+        headers: { Authorization: 'Bearer ' + access }, signal: AbortSignal.timeout(10_000),
+      })
+      if (response.status === 403) {
+        const denied = await response.json().catch(() => null)
+        if (denied?.error?.errors?.some((entry: { reason?: string }) => entry.reason === 'insufficientPermissions') ||
+            denied?.error?.details?.some((entry: { reason?: string }) => entry.reason === 'ACCESS_TOKEN_SCOPE_INSUFFICIENT')) {
+          return { data: { needsAccess: true } }
+        }
+      }
+      if (!response.ok) throw new YoutubeError('Не удалось получить данные канала YouTube.', 502)
+      const channel = (await response.json()).items?.[0]
+      if (!channel) return { data: { needsAccess: false } }
+      const count = channel.statistics?.subscriberCount
+      return { data: {
+        title: channel.snippet?.title,
+        username: channel.snippet?.customUrl,
+        avatar: channel.snippet?.thumbnails?.default?.url,
+        subscribers: !channel.statistics?.hiddenSubscriberCount && /^\d+$/.test(count ?? '') ? Number(count) : null,
+      } }
+    }
+
     if (action === 'youtube-connect') {
       const state = crypto.randomUUID()
       const { error } = await db.from('youtube_oauth_states').upsert({
@@ -160,10 +184,13 @@ export async function youtubeAction(db: SupabaseClient, userId: number, body: Re
       if (typeof beatId !== 'string' || !uuid.test(beatId) || typeof size !== 'number' || !Number.isSafeInteger(size) || size < 1 ||
           size > maxVideoSize || typeof mimeType !== 'string' || !/^(video\/[\w.+-]+|application\/octet-stream)$/.test(mimeType) ||
           typeof madeForKids !== 'boolean') throw new YoutubeError('Проверь файл и выбери аудиторию видео.')
-      const { data: beat, error } = await db.from('beats').select('title,youtube_description,youtube_keywords')
+      const { data: beat, error } = await db.from('beats').select('title,youtube_description,youtube_keywords,youtube_link')
         .eq('id', beatId).eq('telegram_user_id', userId).maybeSingle()
       if (error) throw error
       if (!beat) throw new YoutubeError('Для загрузки выбери бит из облачной библиотеки.', 404)
+      if (beat.youtube_link?.trim() && body.republish !== true) {
+        throw new YoutubeError('Бит уже загружен на YouTube. Подтверди «Опубликовать заново».', 409)
+      }
       if (!beat.title.trim() || beat.title.length > 100 || /[<>]/.test(beat.title) ||
           new TextEncoder().encode(beat.youtube_description).length > 5000 || /[<>]/.test(beat.youtube_description)) {
         throw new YoutubeError('YouTube принимает заголовок до 100 символов и описание до 5000 байт без знаков < и >.')

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
+import { ChannelIdentity } from './telegram-settings'
 import {
-  createYoutubeConnection, disconnectYoutube, resumeYoutubeUpload, sendYoutubeChunk,
-  startYoutubeUpload, youtubeConnection, type YoutubeConnection, type YoutubeUploadStep,
+  createYoutubeConnection, disconnectYoutube, loadYoutubeChannelProfile, resumeYoutubeUpload, sendYoutubeChunk,
+  startYoutubeUpload, youtubeConnection, type ChannelProfile, type YoutubeConnection, type YoutubeUploadStep,
 } from './cloud-beats'
 
 const chunkSize = 2 * 1024 * 1024
@@ -40,6 +41,7 @@ export function YoutubeUpload({ initData, beatId, video, fileKey, existingLink, 
   const [connection, setConnection] = useState<YoutubeConnection>()
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState(0)
+  const [confirmRepeat, setConfirmRepeat] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [result, setResult] = useState<{ url: string; saved: boolean }>()
   const [error, setError] = useState('')
@@ -60,22 +62,27 @@ export function YoutubeUpload({ initData, beatId, video, fileKey, existingLink, 
     }
   }, [initData])
 
-  async function upload() {
-    if (!video || request.current) return
+  const alreadyPublished = Boolean(existingLink.trim() || result?.saved)
+
+  async function upload(republish = false) {
+    if (!video || request.current || (alreadyPublished && !republish && !session.current)) return
     const controller = new AbortController()
     request.current = controller
     setUploading(true)
     setConfirming(false)
     setError('')
     const uploadId = session.current ?? crypto.randomUUID()
-    session.current = uploadId
-    storeSession(key, uploadId)
+    setConfirmRepeat(false)
+    setResult(undefined)
+    setProgress(0)
     try {
       await beforeStart()
       if (controller.signal.aborted) return
       await startYoutubeUpload(initData, {
-        uploadId, beatId, size: video.size, mimeType: video.type || 'application/octet-stream', madeForKids: false,
+        uploadId, beatId, size: video.size, mimeType: video.type || 'application/octet-stream', madeForKids: false, republish,
       })
+      session.current = uploadId
+      storeSession(key, uploadId)
       let step: YoutubeUploadStep = await resumeYoutubeUpload(initData, uploadId, controller.signal)
       let confirmationChecks = 0
       while ('next' in step) {
@@ -129,7 +136,14 @@ export function YoutubeUpload({ initData, beatId, video, fileKey, existingLink, 
     {connection?.connected && <>
       <p className="form-hint">YouTube подключён. Видео будет доступно только тебе.</p>
       {!video && <p className="form-hint">Собери видео или выбери файл с устройства.</p>}
-      {(!result || !result.saved) && <button type="button" className="copy-button" disabled={!video || uploading} onClick={() => void upload()}>
+      {alreadyPublished && !uploading && !session.current ? <>
+        <p className="form-hint">У бита уже есть публикация на YouTube.</p>
+        {confirmRepeat ? <>
+          <p className="form-hint">Загрузить новое видео для этого бита?</p>
+          <button type="button" className="copy-button" disabled={!video} onClick={() => void upload(true)}>Подтвердить повторную публикацию</button>
+          <button type="button" className="copy-button copy-button--subtle" onClick={() => setConfirmRepeat(false)}>Отмена</button>
+        </> : <button type="button" className="copy-button" disabled={!video} onClick={() => setConfirmRepeat(true)}>Опубликовать заново</button>}
+      </> : <button type="button" className="copy-button" disabled={!video || uploading} onClick={() => void upload()}>
         {uploading ? confirming ? 'Ждём подтверждения YouTube…' : 'Загружаем…' : result ? 'Повторить сохранение ссылки' : session.current ? 'Продолжить загрузку' : 'Загрузить приватное видео'}
       </button>}
       {!result && (uploading || progress > 0) && <div className="youtube-upload-progress">
@@ -148,6 +162,8 @@ export function YoutubeUpload({ initData, beatId, video, fileKey, existingLink, 
 
 export function YoutubeChannelSettings({ initData, openLink }: { initData?: string; openLink?: (url: string) => void }) {
   const [connection, setConnection] = useState<YoutubeConnection>()
+  const [profile, setProfile] = useState<ChannelProfile>()
+  const [profileLoading, setProfileLoading] = useState(false)
   const [authUrl, setAuthUrl] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -155,8 +171,16 @@ export function YoutubeChannelSettings({ initData, openLink }: { initData?: stri
   useEffect(() => {
     if (!initData) return
     let active = true
-    void youtubeConnection(initData).then((status) => { if (active) setConnection(status) })
-      .catch(() => { if (active) setError('Не удалось проверить подключение YouTube.') })
+    void youtubeConnection(initData).then(async (status) => {
+      if (!active) return
+      setConnection(status)
+      if (!status.connected) return
+      setProfileLoading(true)
+      try {
+        const result = await loadYoutubeChannelProfile(initData)
+        if (active) setProfile(result)
+      } finally { if (active) setProfileLoading(false) }
+    }).catch(() => { if (active) setError('Не удалось загрузить данные канала YouTube.') })
     return () => { active = false }
   }, [initData])
 
@@ -173,38 +197,42 @@ export function YoutubeChannelSettings({ initData, openLink }: { initData?: stri
     return run(async (session) => {
       const status = await youtubeConnection(session)
       setConnection(status)
-      if (status.connected) setAuthUrl('')
+      if (!status.connected) return
+      const updated = await loadYoutubeChannelProfile(session)
+      setProfile(updated)
+      if (!updated.needsAccess) setAuthUrl('')
     })
   }
+
+  const needsConnection = connection?.configured && !connection.connected
+  const needsAccess = connection?.connected && profile?.needsAccess
 
   return <section className="form-panel batch-panel" aria-label="Настройки канала YouTube">
     <div className="section-intro"><h2>YouTube</h2></div>
     {!initData && <p className="form-hint">Открой XEINTY через Telegram, чтобы подключить YouTube.</p>}
     {initData && !connection && !error && <p role="status">Проверяем подключение…</p>}
     {connection?.configured === false && <p className="form-hint">Подключение Google пока не настроено.</p>}
-    {connection?.configured && !connection.connected && <>
-      <button type="button" className="copy-button" disabled={busy} onClick={() => void run(async (session) => {
+    {connection?.connected && <ChannelIdentity title="YouTube подключён" address={profile?.username ?? undefined} profile={profile} loading={profileLoading} />}
+    {needsAccess && <p className="form-hint">Обнови доступ Google, чтобы увидеть профиль канала и количество подписчиков.</p>}
+    <div className="youtube-channel-actions">
+      {(needsConnection || needsAccess) && <button type="button" className="outline-button" disabled={busy} onClick={() => void run(async (session) => {
         setAuthUrl((await createYoutubeConnection(session)).url)
-      })}>Подключить YouTube</button>
-      {authUrl && <>
-        <a className="video-download" href={authUrl} target="_blank" rel="noreferrer" onClick={openLink ? (event) => {
-          event.preventDefault()
-          openLink(authUrl)
-        } : undefined}>Открыть Google в браузере</a>
-        <p className="form-hint">После согласия вернись в XEINTY и проверь подключение.</p>
-      </>}
-      <button type="button" className="copy-button copy-button--subtle" disabled={busy} onClick={() => void refresh()}>Проверить подключение</button>
-    </>}
-
-    {connection?.connected && <>
-      <p role="status">YouTube подключён.</p>
-      <button type="button" className="outline-button" disabled={busy} onClick={() => void run(async (session) => {
+      })}>{needsAccess ? 'Обновить доступ' : 'Подключить YouTube'}</button>}
+      {(needsConnection || authUrl || (initData && error)) && <button type="button" className="outline-button" disabled={busy} onClick={() => void refresh()}>Проверить подключение</button>}
+      {connection?.connected && <button type="button" className="outline-button" disabled={busy || profileLoading} onClick={() => void run(async (session) => {
         await disconnectYoutube(session)
         setConnection({ configured: true, connected: false })
+        setProfile(undefined)
         setAuthUrl('')
-      })}>Отключить YouTube</button>
+      })}>Отключить YouTube</button>}
+    </div>
+    {authUrl && <>
+      <a className="video-download" href={authUrl} target="_blank" rel="noreferrer" onClick={openLink ? (event) => {
+        event.preventDefault()
+        openLink(authUrl)
+      } : undefined}>Открыть Google в браузере</a>
+      <p className="form-hint">После согласия вернись в XEINTY и проверь подключение.</p>
     </>}
     {error && <p className="video-error" role="alert">{error}</p>}
-    {initData && error && !connection && <button type="button" className="outline-button" disabled={busy} onClick={() => void refresh()}>Повторить проверку</button>}
   </section>
 }

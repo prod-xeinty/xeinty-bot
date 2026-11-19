@@ -7,7 +7,7 @@ import { getTelegramWebApp } from './telegram'
 import { makeStaticVideo, videoProfileLabel, type VideoStage } from './video'
 import { saveVideoFile } from './save-video'
 import { deleteStoredBeat, loadStoredBeats, saveBeatCover, saveBeatMetadata, saveNewBeat, type StoredBeat } from './beat-store'
-import { cloudConfigured, connectTelegramChannel, disconnectTelegramChannel, loadTelegramChannels, type TelegramChannel, createCloudBeat, deleteCloudBeat, loadCloudBeats, publishCloudTelegram, remoteFile, replaceCloudCover, updateCloudBeat } from './cloud-beats'
+import { cloudConfigured, connectTelegramChannel, disconnectTelegramChannel, loadTelegramChannels, type TelegramChannel, type PublicationLinks, createCloudBeat, deleteCloudBeat, loadCloudBeats, publishCloudTelegram, remoteFile, replaceCloudCover, updateCloudBeat } from './cloud-beats'
 import { normalizeMusicKey } from './music-key'
 import { Dropdown, KeyPicker } from './choice-menu'
 import { parseAudioName } from './filename'
@@ -380,19 +380,19 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
   }
   function openBeat(beat: Beat, nextTab: DetailTab = 'data') { setSelectedId(beat.id); setTab(nextTab); setConfirmDelete(false); navigate('detail') }
   function openPublish(beat?: Beat, mode: 'single' | 'batch' = 'single') { if (beat && !beat.isDemo) setSelectedId(beat.id); setPublishMode(mode); setPublicationPlatform('telegram'); navigate('publish') }
-  async function persistBeat(beat: Beat) {
+  async function persistBeat(beat: Beat, publicationLinks?: PublicationLinks) {
     if (!beat.cloud) return saveBeatMetadata(storedBeat(beat))
     if (!webApp?.initData) throw new Error('Telegram session required')
     const initData = webApp.initData
     const pending = pendingCloudWrites.current.get(beat.id)
-    const write = (pending?.catch(() => {}) ?? Promise.resolve()).then(() => updateCloudBeat(initData, storedBeat(beat)))
+    const write = (pending?.catch(() => {}) ?? Promise.resolve()).then(() => updateCloudBeat(initData, storedBeat(beat), publicationLinks))
     pendingCloudWrites.current.set(beat.id, write)
     try { await write } finally {
       if (pendingCloudWrites.current.get(beat.id) === write) pendingCloudWrites.current.delete(beat.id)
     }
   }
 
-  async function publishTelegram(channel: string, targets: Beat[], caption: string, cover?: File, useSavedCover = false, coverCaption = '') {
+  async function publishTelegram(channel: string, targets: Beat[], caption: string, cover?: File, useSavedCover = false, coverCaption = '', republish = false) {
     if (!webApp?.initData) throw new Error('Открой XEINTY через Telegram.')
     if (caption.length > 1024) throw new Error('Сократи подпись до 1024 символов.')
     const beatIds = targets.map((beat) => beat.id)
@@ -407,7 +407,7 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
       }
     }
     const result = await publishCloudTelegram(webApp.initData, {
-      channel, beatIds, caption, useSavedCover, coverCaption, cover: cover ? await readPublicationCover(cover) : undefined,
+      channel, beatIds, caption, useSavedCover, coverCaption, republish, cover: cover ? await readPublicationCover(cover) : undefined,
     })
     rememberHashtags(caption, coverCaption)
     if (result.saved) setBeats((all) => all.map((beat) => beatIds.includes(beat.id) ? { ...beat, telegramLink: result.url } : beat))
@@ -420,6 +420,12 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
     if (updated.cloud && webApp?.initData) {
       const existing = cloudSaveTimersRef.current.get(updated.id)
       if (existing) window.clearTimeout(existing)
+      const publicationLinks = { telegramLink: patch.telegramLink, youtubeLink: patch.youtubeLink }
+      if (publicationLinks.telegramLink !== undefined || publicationLinks.youtubeLink !== undefined) {
+        cloudSaveTimersRef.current.delete(updated.id)
+        void persistBeat(updated, publicationLinks).catch(() => notify('Ссылка не сохранилась в облаке'))
+        return
+      }
       const timer = window.setTimeout(() => {
         cloudSaveTimersRef.current.delete(updated.id)
         void persistBeat(updated).catch(() => notify('Изменения не сохранились в облаке'))
@@ -624,7 +630,7 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
               <div className="section-intro"><h2>Для площадок</h2><p>Подстрой тексты и подготовь видео для выбранного бита.</p></div>
                 <div className="platform-switch" role="tablist" aria-label="Площадка" style={{ '--tab-i': publicationPlatform === 'youtube' ? 1 : 0 } as CSSProperties}><button role="tab" aria-selected={publicationPlatform === 'telegram'} className={publicationPlatform === 'telegram' ? 'is-active' : ''} onClick={() => setPublicationPlatform('telegram')}>Telegram</button><button role="tab" aria-selected={publicationPlatform === 'youtube'} className={publicationPlatform === 'youtube' ? 'is-active' : ''} onClick={() => setPublicationPlatform('youtube')}>YouTube</button></div>
               <div className="publication-grid">
-                <div className={`publication-card ${publicationPlatform === 'telegram' ? 'is-current' : ''}`}><div className="publication-card-head"><div className="platform-icon telegram-icon"><Send size={20} /></div><div><span>TELEGRAM</span><h3>Подпись к посту</h3></div></div><textarea aria-label="Подпись для Telegram" placeholder="Добавить подпись (необязательно)" value={selected.telegramCaption} maxLength={1024} onBlur={(e) => rememberHashtags(e.currentTarget.value)} onChange={(e) => updateBeat({ telegramCaption: e.target.value })} />{captionTools(selected.telegramCaption, (telegramCaption) => updateBeat({ telegramCaption }))}<label className="batch-cover-toggle"><input type="checkbox" checked={includeTelegramCover} onChange={(event) => toggleTelegramCover(event.target.checked)} /><span>Прикладывать обложку к посту</span></label>{cloudAvailable && selected.cloud && <DirectTelegramPublication channels={channels} key={selected.id} publish={(channel) => publishTelegram(channel, [selected], selected.telegramCaption, undefined, includeTelegramCover)} />}
+                <div className={`publication-card ${publicationPlatform === 'telegram' ? 'is-current' : ''}`}><div className="publication-card-head"><div className="platform-icon telegram-icon"><Send size={20} /></div><div><span>TELEGRAM</span><h3>Подпись к посту</h3></div></div><textarea aria-label="Подпись для Telegram" placeholder="Добавить подпись (необязательно)" value={selected.telegramCaption} maxLength={1024} onBlur={(e) => rememberHashtags(e.currentTarget.value)} onChange={(e) => updateBeat({ telegramCaption: e.target.value })} />{captionTools(selected.telegramCaption, (telegramCaption) => updateBeat({ telegramCaption }))}<label className="batch-cover-toggle"><input type="checkbox" checked={includeTelegramCover} onChange={(event) => toggleTelegramCover(event.target.checked)} /><span>Прикладывать обложку к посту</span></label>{cloudAvailable && selected.cloud && <DirectTelegramPublication channels={channels} key={selected.id} publishedCount={selected.telegramLink.trim() ? 1 : 0} publish={(channel, republish) => publishTelegram(channel, [selected], selected.telegramCaption, undefined, includeTelegramCover, '', republish)} />}
                 </div>
                 <div className={`publication-card ${publicationPlatform === 'youtube' ? 'is-current' : ''}`}><div className="publication-card-head"><div className="platform-icon youtube-icon">▶</div><div><span>YOUTUBE</span><h3>Описание видео</h3></div></div><textarea aria-label="Описание для YouTube" placeholder="Описание (необязательно)" maxLength={5000} value={selected.youtubeDescription} onChange={(e) => updateBeat({ youtubeDescription: e.target.value })} />{captionTools(selected.youtubeDescription, (youtubeDescription) => updateBeat({ youtubeDescription }), true)}<label className="keywords-field"><span>КЛЮЧЕВЫЕ СЛОВА</span><input aria-label="Ключевые слова YouTube" value={selected.youtubeKeywords} onChange={(e) => updateBeat({ youtubeKeywords: e.target.value })} /></label>
 
@@ -676,7 +682,7 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
               {captionTools(batchCaption, setBatchCaption)}
 
               {cloudAvailable && batchBeats.length > 0 && batchBeats.every((beat) => beat.cloud) && batchFiles.length === 0 &&
-                <DirectTelegramPublication channels={channels} key={batchBeats.map((beat) => beat.id).join(',')} publish={(channel) => publishTelegram(channel, batchBeats, batchCaption, includeTelegramCover ? batchCoverFile ?? undefined : undefined, false, includeTelegramCover && batchCoverFile ? batchCoverCaption : '')} />}
+                <DirectTelegramPublication channels={channels} key={batchBeats.map((beat) => beat.id).join(',')} publishedCount={batchBeats.filter((beat) => beat.telegramLink.trim()).length} publish={(channel, republish) => publishTelegram(channel, batchBeats, batchCaption, includeTelegramCover ? batchCoverFile ?? undefined : undefined, false, includeTelegramCover && batchCoverFile ? batchCoverCaption : '', republish)} />}
               {cloudAvailable && (batchFiles.length > 0 || batchBeats.some((beat) => !beat.cloud)) &&
                 <p className="form-hint">Для прямой публикации выбери MP3 из облачной библиотеки. Файлы с устройства можно прикрепить вручную в Telegram.</p>}
               {batchBeats.length > 0 && <p className="form-hint">Ссылка сохранится у всех выбранных битов из библиотеки.</p>}
@@ -695,7 +701,7 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
           {screen === 'channels' && <>
             <div className="page-heading"><div><h1>Каналы</h1><p>Куда XEINTY может публиковать биты.</p></div></div>
             <h2 className="channel-section-title">Telegram</h2>
-            <TelegramChannels available={cloudAvailable} channels={channels} loadError={channelLoadError} onConnect={addChannel} onDisconnect={removeChannel} />
+            <TelegramChannels available={cloudAvailable} initData={webApp?.initData} channels={channels} loadError={channelLoadError} onConnect={addChannel} onDisconnect={removeChannel} />
             <YoutubeChannelSettings initData={cloudAvailable ? webApp?.initData : undefined}
               openLink={webApp?.openLink ? (url) => webApp.openLink?.(url) : undefined} />
           </>}
