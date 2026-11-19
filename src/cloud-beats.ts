@@ -79,3 +79,15 @@ export async function remoteFile(url: string, name: string): Promise<File> {
   const blob = await response.blob()
   return new File([blob], name, { type: blob.type })
 }
+
+export type TelegramPublication = { url: string; saved: boolean; warnings: string[] }
+
+export async function publishCloudTelegram(initData: string, payload: {
+  channel: string
+  beatIds: string[]
+  caption: string
+  useSavedCover?: boolean
+  cover?: string
+}): Promise<TelegramPublication> {
+  return call(initData, 'publish-telegram', payload)
+}

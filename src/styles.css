@@ -372,3 +372,6 @@ input, textarea { caret-color: #fff; }
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+.publication-link { margin-top: 16px; padding-top: 14px; border-top: 1px solid #ffffff23; }
+.video-save-actions a { max-width: 100%; overflow-wrap: anywhere; }
