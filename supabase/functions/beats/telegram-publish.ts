@@ -72,7 +72,7 @@ export async function postAudio(chat: Chat, tracks: { audio: string }[], caption
     first = await api<Message>('sendAudio', { chat_id: chat.id, ...tracks[0], ...captionWithLinks(caption) })
   } else {
     const media = tracks.map(({ audio }, index) => ({
-      type: 'audio', media: audio, ...(index === 0 ? captionWithLinks(caption) : {}),
+      type: 'audio', media: audio, ...(index === tracks.length - 1 ? captionWithLinks(caption) : {}),
     }))
     const messages = await api<Message[]>('sendMediaGroup', { chat_id: chat.id, media })
     first = messages[0]
