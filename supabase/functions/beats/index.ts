@@ -1,5 +1,6 @@
 // Deploy with verify_jwt = false: Telegram initData is verified below on every request.
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import { channelForPublisher, postAudio, postCover, readCover, TelegramPublishError } from './telegram-publish.ts'
 
 const bucket = 'beat-previews'
 const encoder = new TextEncoder()
@@ -153,6 +154,53 @@ Deno.serve(async (request) => {
       return reply({ beats }, 200, origin)
     }
 
+    if (action === 'publish-telegram') {
+      const ids: unknown = body.beatIds
+      const caption = text(body.caption, 1024)
+      const channel = text(body.channel, 40)?.trim()
+      if (!Array.isArray(ids) || ids.length < 1 || ids.length > 10 || new Set(ids).size !== ids.length ||
+          !ids.every((id) => typeof id === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id)) ||
+          caption === null || !channel || !/^(@[a-z0-9_]{5,32}|-100[0-9]{5,16})$/i.test(channel)) {
+        return reply({ error: 'Нужны @имя или ID канала, до 10 битов и подпись до 1024 символов' }, 400, origin)
+      }
+      const { data, error } = await db.from('beats').select('id,title,audio_path,cover_path')
+        .eq('telegram_user_id', userId).in('id', ids)
+      if (error) throw error
+      const ordered = ids.map((id) => data?.find((beat) => beat.id === id))
+      if (ordered.some((beat) => !beat?.audio_path)) {
+        return reply({ error: 'Для публикации нужны твои биты с MP3 в облаке' }, 404, origin)
+      }
+      const chat = await channelForPublisher(channel, userId)
+      const sign = async (path: string) => {
+        const { data, error } = await db.storage.from(bucket).createSignedUrl(path, 600)
+        if (error || !data?.signedUrl) throw new TelegramPublishError('Не удалось получить файл из облака.')
+        return data.signedUrl
+      }
+      let cover: string | File | undefined = readCover(body.cover)
+      if (!cover && body.useSavedCover === true && ordered.length === 1 && ordered[0]?.cover_path) {
+        cover = await sign(ordered[0].cover_path)
+      }
+      const tracks = await Promise.all(ordered.map(async (beat) => ({
+        audio: await sign(beat!.audio_path),
+        title: beat!.title,
+      })))
+      const url = await postAudio(chat, tracks, caption)
+      const warnings: string[] = []
+      try {
+        const { error: saveError } = await db.from('beats').update({
+          telegram_link: url, updated_at: new Date().toISOString(),
+        }).eq('telegram_user_id', userId).in('id', ids)
+        if (saveError) warnings.push('Ссылка не сохранилась. Скопируй её из результата.')
+      } catch {
+        warnings.push('Ссылка не сохранилась. Скопируй её из результата.')
+      }
+      if (cover) {
+        try { await postCover(chat, cover) }
+        catch { warnings.push('Аудио опубликовано. Отправь обложку отдельно вручную.') }
+      }
+      return reply({ url, saved: !warnings.some((warning) => warning.startsWith('Ссылка')), warnings }, 200, origin)
+    }
+
     if (action === 'prepare') {
       if (typeof body.audioName !== 'string' || !/\.mp3$/i.test(body.audioName) ||
           !Number.isInteger(body.audioSize) || body.audioSize < 1 || body.audioSize > maxAudioSize) {
@@ -245,6 +293,7 @@ Deno.serve(async (request) => {
 
     return reply({ error: 'Неизвестное действие' }, 400, origin)
   } catch (error) {
+    if (error instanceof TelegramPublishError) return reply({ error: error.message }, 400, origin)
     console.error('XEINTY beats function failed', error)
     return reply({ error: 'Облако временно недоступно' }, 500, origin)
   }

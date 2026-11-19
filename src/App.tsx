@@ -4,14 +4,20 @@ import { getTelegramWebApp } from './telegram'
 import { makeStaticVideo, type VideoStage } from './video'
 import { saveVideoFile } from './save-video'
 import { deleteStoredBeat, loadStoredBeats, saveBeatCover, saveBeatMetadata, saveNewBeat, type StoredBeat } from './beat-store'
-import { cloudConfigured, createCloudBeat, deleteCloudBeat, loadCloudBeats, remoteFile, replaceCloudCover, updateCloudBeat } from './cloud-beats'
+import { cloudConfigured, createCloudBeat, deleteCloudBeat, loadCloudBeats, publishCloudTelegram, remoteFile, replaceCloudCover, updateCloudBeat } from './cloud-beats'
 import { canonicalKeyOptions, normalizeMusicKey } from './music-key'
 import { parseAudioName, telegramLine } from './filename'
+import { DirectTelegramPublication, PublicationLink, readPublicationCover, TelegramMedia, type PublishMedia } from './publication'
 
 type Screen = 'library' | 'create' | 'publish' | 'overview' | 'detail'
 type DetailTab = 'data' | 'stats'
 type Beat = Omit<StoredBeat, 'createdAt'> & {
   createdAt?: number; cover: number; coverUrl?: string; audioUrl?: string; audioFile?: File; coverFile?: File; isDemo?: boolean; cloud?: boolean
+}
+
+function beatAudio(beat: Beat): PublishMedia[] {
+  if (!beat.audioFile && !beat.audioUrl) return []
+  return [{ name: beat.audioName || 'beat.mp3', file: beat.audioFile, url: beat.audioUrl }]
 }
 
 function storedBeat(beat: Beat): StoredBeat {
@@ -85,9 +91,11 @@ function App() {
   const fileUrlsRef = useRef<string[]>([])
   const playerRef = useRef<HTMLAudioElement>(null)
   const cloudSaveTimersRef = useRef(new Map<string, number>())
+  const pendingCloudWrites = useRef(new Map<string, Promise<void>>())
   const selected = beats.find((beat) => beat.id === selectedId) ?? beats[0]
   const latest = beats[0]
   const savedAudioBeats = beats.filter((beat) => !beat.isDemo && (beat.audioFile || beat.audioUrl))
+  const batchBeats = batchSelectedIds.flatMap((id) => savedAudioBeats.filter((beat) => beat.id === id))
   const cloudAvailable = cloudConfigured() && Boolean(webApp?.initData)
 
   function toggleTelegramCover(enabled: boolean) {
@@ -193,16 +201,58 @@ function App() {
   }
   function openBeat(beat: Beat, nextTab: DetailTab = 'data') { setSelectedId(beat.id); setTab(nextTab); setConfirmDelete(false); navigate('detail') }
   function openPublish(beat?: Beat, mode: 'single' | 'batch' = 'single') { if (beat && !beat.isDemo) setSelectedId(beat.id); setPublishMode(mode); setPublicationPlatform('telegram'); navigate('publish') }
+  async function persistBeat(beat: Beat) {
+    if (!beat.cloud) return saveBeatMetadata(storedBeat(beat))
+    if (!webApp?.initData) throw new Error('Telegram session required')
+    const initData = webApp.initData
+    const pending = pendingCloudWrites.current.get(beat.id)
+    const write = (pending?.catch(() => {}) ?? Promise.resolve()).then(() => updateCloudBeat(initData, storedBeat(beat)))
+    pendingCloudWrites.current.set(beat.id, write)
+    try { await write } finally {
+      if (pendingCloudWrites.current.get(beat.id) === write) pendingCloudWrites.current.delete(beat.id)
+    }
+  }
+
+  async function publishTelegram(channel: string, targets: Beat[], caption: string, cover?: File, useSavedCover = false) {
+    if (!webApp?.initData) throw new Error('Открой XEINTY через Telegram.')
+    if (caption.length > 1024) throw new Error('Сократи подпись до 1024 символов.')
+    const beatIds = targets.map((beat) => beat.id)
+    for (const beat of targets) {
+      const timer = cloudSaveTimersRef.current.get(beat.id)
+      if (timer !== undefined) {
+        window.clearTimeout(timer)
+        cloudSaveTimersRef.current.delete(beat.id)
+        await persistBeat(beat)
+      } else {
+        await pendingCloudWrites.current.get(beat.id)
+      }
+    }
+    const result = await publishCloudTelegram(webApp.initData, {
+      channel, beatIds, caption, useSavedCover, cover: cover ? await readPublicationCover(cover) : undefined,
+    })
+    if (result.saved) setBeats((all) => all.map((beat) => beatIds.includes(beat.id) ? { ...beat, telegramLink: result.url } : beat))
+    return result
+  }
+
+  async function savePublicationLink(targets: Beat[], field: 'telegramLink' | 'youtubeLink', url: string) {
+    const saved = await Promise.allSettled(targets.map(async (beat) => {
+      window.clearTimeout(cloudSaveTimersRef.current.get(beat.id))
+      cloudSaveTimersRef.current.delete(beat.id)
+      await persistBeat({ ...beat, [field]: url })
+      setBeats((all) => all.map((item) => item.id === beat.id ? { ...item, [field]: url } : item))
+    }))
+    if (saved.some((result) => result.status === 'rejected')) throw new Error('Unable to save publication link')
+  }
+
   function updateBeat(patch: Partial<Beat>) {
     const updated = { ...selected, ...patch }
     setBeats((all) => all.map((beat) => beat.id === selected.id ? updated : beat))
     if (updated.cloud && webApp?.initData) {
       const existing = cloudSaveTimersRef.current.get(updated.id)
       if (existing) window.clearTimeout(existing)
-      const initData = webApp.initData
       const timer = window.setTimeout(() => {
         cloudSaveTimersRef.current.delete(updated.id)
-        void updateCloudBeat(initData, storedBeat(updated)).catch(() => notify('Изменения не сохранились в облаке'))
+        void persistBeat(updated).catch(() => notify('Изменения не сохранились в облаке'))
       }, 500)
       cloudSaveTimersRef.current.set(updated.id, timer)
     }
@@ -217,14 +267,6 @@ function App() {
     try { await navigator.clipboard.writeText(value); notify(`${label} скопирован`) }
     catch { notify('Не удалось скопировать. Выдели текст вручную.') }
   }
-  function shareTelegramText(caption: string) {
-    const shareUrl = new URL('https://t.me/share/url')
-    shareUrl.searchParams.set('url', '')
-    shareUrl.searchParams.set('text', caption)
-    if (webApp?.openTelegramLink) webApp.openTelegramLink(shareUrl.toString())
-    else window.open(shareUrl.toString(), '_blank', 'noopener,noreferrer')
-  }
-  function openTelegramShare() { shareTelegramText(selected.telegramCaption) }
   async function createVideo() {
     if (videoStage || (!selected.audioFile && !selected.audioUrl) || (!selected.coverFile && !selected.coverUrl)) return
     setVideoError('')
@@ -400,15 +442,19 @@ function App() {
               <div className="section-intro"><h2>Для площадок</h2><p>Подстрой тексты и подготовь видео для выбранного бита.</p></div>
               <div className="platform-switch" role="tablist" aria-label="Площадка"><button role="tab" aria-selected={publicationPlatform === 'telegram'} className={publicationPlatform === 'telegram' ? 'is-active' : ''} onClick={() => setPublicationPlatform('telegram')}>Telegram</button><button role="tab" aria-selected={publicationPlatform === 'youtube'} className={publicationPlatform === 'youtube' ? 'is-active' : ''} onClick={() => setPublicationPlatform('youtube')}>YouTube</button></div>
               <div className="publication-grid">
-                <div className={`publication-card ${publicationPlatform === 'telegram' ? 'is-current' : ''}`}><div className="publication-card-head"><div className="platform-icon telegram-icon"><Send size={20} /></div><div><span>TELEGRAM</span><h3>Подпись к посту</h3></div></div><textarea aria-label="Подпись для Telegram" value={selected.telegramCaption} onChange={(e) => updateBeat({ telegramCaption: e.target.value })} /><button className="copy-button" onClick={() => copyText(selected.telegramCaption, 'Текст Telegram')}><Clipboard size={16} /> Скопировать текст <ArrowRight size={16} /></button><button className="copy-button telegram-share-button" onClick={openTelegramShare}><Send size={16} /> Выбрать чат в Telegram <ArrowRight size={16} /></button><label className="batch-cover-toggle"><input type="checkbox" checked={includeTelegramCover} onChange={(event) => toggleTelegramCover(event.target.checked)} /><span>Прикладывать обложку к посту</span></label><p className="form-hint">В Telegram выбери канал и приложи аудиофайл. {includeTelegramCover ? "Если нужна обложка, добавь её перед отправкой." : "Отправь аудио без обложки."}</p></div>
-                <div className={`publication-card ${publicationPlatform === 'youtube' ? 'is-current' : ''}`}><div className="publication-card-head"><div className="platform-icon youtube-icon">▶</div><div><span>YOUTUBE</span><h3>Описание видео</h3></div></div><textarea aria-label="Описание для YouTube" value={selected.youtubeDescription} onChange={(e) => updateBeat({ youtubeDescription: e.target.value })} /><button className="copy-button" onClick={() => copyText(selected.youtubeDescription, 'Описание YouTube')}><Clipboard size={16} /> Скопировать описание <ArrowRight size={16} /></button><label className="keywords-field"><span>КЛЮЧЕВЫЕ СЛОВА</span><input aria-label="Ключевые слова YouTube" value={selected.youtubeKeywords} onChange={(e) => updateBeat({ youtubeKeywords: e.target.value })} /></label><button className="copy-button copy-button--subtle" onClick={() => copyText(selected.youtubeKeywords, 'Ключевые слова')}><Clipboard size={16} /> Скопировать ключевые слова <ArrowRight size={16} /></button></div>
+                <div className={`publication-card ${publicationPlatform === 'telegram' ? 'is-current' : ''}`}><div className="publication-card-head"><div className="platform-icon telegram-icon"><Send size={20} /></div><div><span>TELEGRAM</span><h3>Подпись к посту</h3></div></div><textarea aria-label="Подпись для Telegram" value={selected.telegramCaption} onChange={(e) => updateBeat({ telegramCaption: e.target.value })} /><button className="copy-button" onClick={() => copyText(selected.telegramCaption, 'Текст Telegram')}><Clipboard size={16} /> Скопировать текст <ArrowRight size={16} /></button><label className="batch-cover-toggle"><input type="checkbox" checked={includeTelegramCover} onChange={(event) => toggleTelegramCover(event.target.checked)} /><span>Прикладывать обложку к посту</span></label>{cloudAvailable && selected.cloud && <DirectTelegramPublication key={selected.id} publish={(channel) => publishTelegram(channel, [selected], selected.telegramCaption, undefined, includeTelegramCover)} />}
+                  <TelegramMedia key={selected.id} audio={beatAudio(selected)} cover={includeTelegramCover && (selected.coverFile || selected.coverUrl) ? { name: 'Обложка', file: selected.coverFile, url: selected.coverUrl } : undefined} />
+                  <PublicationLink key={selected.id + selected.telegramLink} platform="telegram" initial={selected.telegramLink} onSave={(url) => savePublicationLink([selected], 'telegramLink', url)} /></div>
+                <div className={`publication-card ${publicationPlatform === 'youtube' ? 'is-current' : ''}`}><div className="publication-card-head"><div className="platform-icon youtube-icon">▶</div><div><span>YOUTUBE</span><h3>Описание видео</h3></div></div><textarea aria-label="Описание для YouTube" value={selected.youtubeDescription} onChange={(e) => updateBeat({ youtubeDescription: e.target.value })} /><button className="copy-button" onClick={() => copyText(selected.youtubeDescription, 'Описание YouTube')}><Clipboard size={16} /> Скопировать описание <ArrowRight size={16} /></button><label className="keywords-field"><span>КЛЮЧЕВЫЕ СЛОВА</span><input aria-label="Ключевые слова YouTube" value={selected.youtubeKeywords} onChange={(e) => updateBeat({ youtubeKeywords: e.target.value })} /></label><button className="copy-button copy-button--subtle" onClick={() => copyText(selected.youtubeKeywords, 'Ключевые слова')}><Clipboard size={16} /> Скопировать ключевые слова <ArrowRight size={16} /></button>
+                  <button className="copy-button" onClick={() => copyText(selected.title, 'Заголовок')}>Скопировать заголовок</button>
+                  <PublicationLink key={selected.id} platform="youtube" initial={selected.youtubeLink} onSave={(url) => savePublicationLink([selected], 'youtubeLink', url)} /></div>
               </div>
               <div className="video-tool"><div className="video-tool-head"><div className="next-feature-icon"><ImagePlus size={22} /></div><div><strong>Видео из обложки и аудио</strong><p>Пробная сборка MP4 16:9 на твоём устройстве. Файлы не отправляются на сервер.</p></div></div>
                 {(selected.audioFile || selected.audioUrl) && (selected.coverFile || selected.coverUrl) ? <>
                   <button className="primary-button video-action" onClick={createVideo} disabled={videoStage !== null}>{videoStage ? 'Сборка идёт…' : 'Собрать MP4'} {!videoStage && <ArrowRight size={18} />}</button>
                   {videoStage && <p className="video-status" role="status">{videoStage === 'loading' ? 'Загружаем видеодвижок — около 31 МБ…' : videoStage === 'preparing' ? 'Подготавливаем файлы…' : 'Собираем видео. Не закрывай Telegram…'}</p>}
                   {videoError && <p className="video-error" role="alert">{videoError}</p>}
-                  {videoResult?.beatId === selected.id && <div className="video-result"><video src={videoResult.url} controls playsInline preload="metadata" aria-label={`Готовое видео ${selected.title}`} /><p>MP4 · {(videoResult.size / 1024 / 1024).toFixed(1)} МБ · сборка {videoResult.seconds} с</p><div className="video-save-actions"><button className="video-download" onClick={saveVideo}><Download size={17} /> Сохранить MP4</button><a className="video-download video-download--secondary" href={videoResult.url} download={`${selected.title.replace(/[^a-z0-9а-яё-]+/gi, '-').toLowerCase()}.mp4`}>Обычная загрузка</a></div></div>}
+                  {videoResult?.beatId === selected.id && <div className="video-result"><video src={videoResult.url} controls playsInline preload="metadata" aria-label={`Готовое видео ${selected.title}`} /><p>MP4 · {(videoResult.size / 1024 / 1024).toFixed(1)} МБ · сборка {videoResult.seconds} с</p><div className="video-save-actions"><button className="video-download" onClick={saveVideo}><Download size={17} /> Сохранить MP4</button><a className="video-download video-download--secondary" href={videoResult.url} download={`${selected.title.replace(/[^a-z0-9а-яё-]+/gi, '-').toLowerCase()}.mp4`}>Обычная загрузка</a><a className="video-download" href="https://studio.youtube.com/" target="_blank" rel="noreferrer">Открыть YouTube Studio <ExternalLink size={16} /></a></div><p>Загрузи сохранённый MP4 в Studio. После публикации сохрани ссылку в разделе YouTube.</p></div>}
                 </> : <p className="video-hint">Для сборки MP4 нужны обложка и MP3 или WAV. Демо-биты без файлов собрать нельзя.</p>}
               </div>
             </div>}
@@ -424,8 +470,16 @@ function App() {
               <label className="batch-cover-toggle"><input type="checkbox" checked={includeTelegramCover} onChange={(event) => toggleTelegramCover(event.target.checked)} /><span>Прикладывать обложку к посту</span></label>
               {includeTelegramCover && <label className="upload-zone"><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setBatchCoverFile(event.target.files?.[0] ?? null)} /><ImagePlus size={24} /><strong>{batchCoverFile?.name ?? 'Общая обложка'}</strong><span>Необязательно · JPG, PNG или WEBP</span></label>}
               <label className="field"><span>ПОДПИСЬ К ПОСТУ</span><textarea className="batch-caption" value={batchCaption} onChange={(event) => setBatchCaption(event.target.value)} placeholder="Выбери биты — подпись появится здесь" /></label>
-              <div className="batch-actions"><button className="copy-button" disabled={!batchCaption} onClick={() => copyText(batchCaption, 'Подпись пачки')}><Clipboard size={16} /> Скопировать подпись</button><button className="copy-button" disabled={!batchCaption} onClick={() => shareTelegramText(batchCaption)}><Send size={16} /> Выбрать чат в Telegram</button></div>
-              <p className="form-hint">Из библиотеки берутся данные для подписи. Аудиофайлы пока нужно приложить в Telegram вручную. Telegram объединит их в альбом; фото-обложка отправляется отдельным сообщением.</p>
+              <div className="batch-actions"><button className="copy-button" disabled={!batchCaption.trim()} onClick={() => copyText(batchCaption, 'Подпись пачки')}><Clipboard size={16} /> Скопировать подпись</button></div>
+              {cloudAvailable && batchBeats.length > 0 && batchBeats.every((beat) => beat.cloud) && batchFiles.length === 0 &&
+                <DirectTelegramPublication key={batchBeats.map((beat) => beat.id).join(',')} publish={(channel) => publishTelegram(channel, batchBeats, batchCaption, includeTelegramCover ? batchCoverFile ?? undefined : undefined)} />}
+              {cloudAvailable && (batchFiles.length > 0 || batchBeats.some((beat) => !beat.cloud)) &&
+                <p className="form-hint">Для прямой публикации выбери MP3 из облачной библиотеки. Файлы с устройства можно отправить вручную ниже.</p>}
+              <TelegramMedia audio={[...batchBeats.flatMap(beatAudio), ...batchFiles.map((file) => ({ name: file.name, file }))]} cover={includeTelegramCover && batchCoverFile ? { name: batchCoverFile.name, file: batchCoverFile } : undefined} />
+              {batchBeats.length > 0 && <PublicationLink key={batchBeats.map((beat) => beat.id + beat.telegramLink).join(',')} platform="telegram"
+                initial={batchBeats.every((beat) => beat.telegramLink === batchBeats[0].telegramLink) ? batchBeats[0].telegramLink : ''}
+                onSave={(url) => savePublicationLink(batchBeats, 'telegramLink', url)} />}
+              {batchBeats.length > 0 && <p className="form-hint">Ссылка сохранится у всех выбранных битов из библиотеки.</p>}
             </div>
             </>}
           </>}
