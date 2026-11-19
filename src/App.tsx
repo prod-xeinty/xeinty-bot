@@ -6,7 +6,7 @@ import { saveVideoFile } from './save-video'
 import { deleteStoredBeat, loadStoredBeats, saveBeatCover, saveBeatMetadata, saveNewBeat, type StoredBeat } from './beat-store'
 import { cloudConfigured, createCloudBeat, deleteCloudBeat, loadCloudBeats, publishCloudTelegram, remoteFile, replaceCloudCover, updateCloudBeat } from './cloud-beats'
 import { canonicalKeyOptions, normalizeMusicKey } from './music-key'
-import { parseAudioName, telegramLine } from './filename'
+import { parseAudioName } from './filename'
 import { DirectTelegramPublication, PublicationLink, readPublicationCover, TelegramMedia, type PublishMedia } from './publication'
 
 type Screen = 'library' | 'create' | 'publish' | 'overview' | 'detail'
@@ -111,25 +111,15 @@ function App() {
     }
   }
 
-  function batchText(ids: string[], files: File[]) {
-    const saved = ids.flatMap((id) => {
-      const beat = beats.find((item) => item.id === id)
-      return beat ? [telegramLine({ title: beat.title, bpm: beat.bpm === '—' ? '' : beat.bpm, key: beat.key === '—' ? '' : beat.key, tags: beat.tags === 'без тегов' ? '' : beat.tags })] : []
-    })
-    return [...saved, ...files.map((file) => telegramLine(parseAudioName(file.name)))].map((line, index) => `${index + 1}. ${line}`).join('\n')
-  }
-
   function toggleBatchBeat(id: string) {
     const next = batchSelectedIds.includes(id) ? batchSelectedIds.filter((item) => item !== id) : [...batchSelectedIds, id]
     if (next.length + batchFiles.length > 10) { notify('В одну пачку можно добавить не больше 10 аудиофайлов'); return }
     setBatchSelectedIds(next)
-    setBatchCaption(batchText(next, batchFiles))
   }
 
   function chooseBatch(files: File[]) {
     if (batchSelectedIds.length + files.length > 10) { notify('В одну пачку можно добавить не больше 10 аудиофайлов'); return }
     setBatchFiles(files)
-    setBatchCaption(batchText(batchSelectedIds, files))
   }
 
   useEffect(() => {
@@ -370,14 +360,13 @@ function App() {
     }
     setSavingBeat(true)
     const title = form.title.trim().toUpperCase()
-    const details = [form.bpm && `${form.bpm} BPM`, normalizedKey].filter(Boolean).join(' / ')
     const youtubeDetails = [form.bpm && `BPM: ${form.bpm}`, normalizedKey && `Key: ${normalizedKey}`].filter(Boolean).join(' · ')
     const beat: Beat = {
       id: `beat-${Date.now()}`, createdAt: Date.now(), title, bpm: form.bpm || '—', key: normalizedKey || '—',
       tags: form.tags.trim() || 'без тегов', status: 'Черновик', cover: 0,
       coverUrl: coverFile ? URL.createObjectURL(coverFile) : undefined,
       audioUrl: audioFile ? URL.createObjectURL(audioFile) : undefined, audioName: audioFile?.name, audioFile: audioFile ?? undefined, coverFile: coverFile ?? undefined,
-      telegramCaption: `${title}${details ? ` — ${details}` : ''}\n\n${form.tags.trim() || '#typebeat'}`,
+      telegramCaption: '',
       youtubeDescription: `${title} | Type Beat${youtubeDetails ? `\n\n${youtubeDetails}` : ''}\n\nДля связи: @yourname`,
       youtubeKeywords: form.tags.trim().replaceAll(' · ', ', '), telegramLink: '', youtubeLink: '',
     }
@@ -442,7 +431,7 @@ function App() {
               <div className="section-intro"><h2>Для площадок</h2><p>Подстрой тексты и подготовь видео для выбранного бита.</p></div>
               <div className="platform-switch" role="tablist" aria-label="Площадка"><button role="tab" aria-selected={publicationPlatform === 'telegram'} className={publicationPlatform === 'telegram' ? 'is-active' : ''} onClick={() => setPublicationPlatform('telegram')}>Telegram</button><button role="tab" aria-selected={publicationPlatform === 'youtube'} className={publicationPlatform === 'youtube' ? 'is-active' : ''} onClick={() => setPublicationPlatform('youtube')}>YouTube</button></div>
               <div className="publication-grid">
-                <div className={`publication-card ${publicationPlatform === 'telegram' ? 'is-current' : ''}`}><div className="publication-card-head"><div className="platform-icon telegram-icon"><Send size={20} /></div><div><span>TELEGRAM</span><h3>Подпись к посту</h3></div></div><textarea aria-label="Подпись для Telegram" value={selected.telegramCaption} onChange={(e) => updateBeat({ telegramCaption: e.target.value })} /><button className="copy-button" onClick={() => copyText(selected.telegramCaption, 'Текст Telegram')}><Clipboard size={16} /> Скопировать текст <ArrowRight size={16} /></button><label className="batch-cover-toggle"><input type="checkbox" checked={includeTelegramCover} onChange={(event) => toggleTelegramCover(event.target.checked)} /><span>Прикладывать обложку к посту</span></label>{cloudAvailable && selected.cloud && <DirectTelegramPublication key={selected.id} publish={(channel) => publishTelegram(channel, [selected], selected.telegramCaption, undefined, includeTelegramCover)} />}
+                <div className={`publication-card ${publicationPlatform === 'telegram' ? 'is-current' : ''}`}><div className="publication-card-head"><div className="platform-icon telegram-icon"><Send size={20} /></div><div><span>TELEGRAM</span><h3>Подпись к посту</h3></div></div><textarea aria-label="Подпись для Telegram" placeholder="Добавить подпись (необязательно)" value={selected.telegramCaption} onChange={(e) => updateBeat({ telegramCaption: e.target.value })} /><button className="copy-button" disabled={!selected.telegramCaption.trim()} onClick={() => copyText(selected.telegramCaption, 'Текст Telegram')}><Clipboard size={16} /> Скопировать текст <ArrowRight size={16} /></button><label className="batch-cover-toggle"><input type="checkbox" checked={includeTelegramCover} onChange={(event) => toggleTelegramCover(event.target.checked)} /><span>Прикладывать обложку к посту</span></label>{cloudAvailable && selected.cloud && <DirectTelegramPublication key={selected.id} publish={(channel) => publishTelegram(channel, [selected], selected.telegramCaption, undefined, includeTelegramCover)} />}
                   <TelegramMedia key={selected.id} audio={beatAudio(selected)} cover={includeTelegramCover && (selected.coverFile || selected.coverUrl) ? { name: 'Обложка', file: selected.coverFile, url: selected.coverUrl } : undefined} />
                   <PublicationLink key={selected.id + selected.telegramLink} platform="telegram" initial={selected.telegramLink} onSave={(url) => savePublicationLink([selected], 'telegramLink', url)} /></div>
                 <div className={`publication-card ${publicationPlatform === 'youtube' ? 'is-current' : ''}`}><div className="publication-card-head"><div className="platform-icon youtube-icon">▶</div><div><span>YOUTUBE</span><h3>Описание видео</h3></div></div><textarea aria-label="Описание для YouTube" value={selected.youtubeDescription} onChange={(e) => updateBeat({ youtubeDescription: e.target.value })} /><button className="copy-button" onClick={() => copyText(selected.youtubeDescription, 'Описание YouTube')}><Clipboard size={16} /> Скопировать описание <ArrowRight size={16} /></button><label className="keywords-field"><span>КЛЮЧЕВЫЕ СЛОВА</span><input aria-label="Ключевые слова YouTube" value={selected.youtubeKeywords} onChange={(e) => updateBeat({ youtubeKeywords: e.target.value })} /></label><button className="copy-button copy-button--subtle" onClick={() => copyText(selected.youtubeKeywords, 'Ключевые слова')}><Clipboard size={16} /> Скопировать ключевые слова <ArrowRight size={16} /></button>
@@ -465,11 +454,11 @@ function App() {
               <div className="batch-library"><div className="batch-library-head"><strong>Выбрать из библиотеки</strong><span>{batchSelectedIds.length + batchFiles.length} / 10</span></div>
                 {savedAudioBeats.length ? <div className="batch-beat-list">{savedAudioBeats.map((beat) => <button type="button" key={beat.id} className={batchSelectedIds.includes(beat.id) ? 'is-active' : ''} aria-pressed={batchSelectedIds.includes(beat.id)} onClick={() => toggleBatchBeat(beat.id)}><Cover beat={beat} className="publish-beat-cover" /><span><strong>{beat.title}</strong><small>{beat.bpm} BPM · {beat.key}</small></span><Check size={17} /></button>)}</div> : <div className="batch-library-empty"><p>В библиотеке пока нет битов с аудиофайлом.</p><button type="button" onClick={() => navigate('create')}>Добавить бит <ArrowRight size={15} /></button></div>}
               </div>
-              <div className="batch-import"><span>ИЛИ ДОБАВЬ С УСТРОЙСТВА</span><label className="upload-zone"><input type="file" multiple accept=".mp3,.wav,audio/mpeg,audio/wav" onChange={(event) => chooseBatch(Array.from(event.target.files ?? []))} /><FileAudio2 size={26} /><strong>{batchFiles.length ? `${batchFiles.length} аудиофайлов` : 'Выбрать аудиофайлы'}</strong><span>Названия файлов разберу автоматически</span></label></div>
+              <div className="batch-import"><span>ИЛИ ДОБАВЬ С УСТРОЙСТВА</span><label className="upload-zone"><input type="file" multiple accept=".mp3,.wav,audio/mpeg,audio/wav" onChange={(event) => chooseBatch(Array.from(event.target.files ?? []))} /><FileAudio2 size={26} /><strong>{batchFiles.length ? `${batchFiles.length} аудиофайлов` : 'Выбрать аудиофайлы'}</strong><span>MP3 или WAV</span></label></div>
               {batchFiles.length > 0 && <ol className="batch-file-list">{batchFiles.map((file, index) => <li key={`${index}-${file.name}`}>{file.name}</li>)}</ol>}
               <label className="batch-cover-toggle"><input type="checkbox" checked={includeTelegramCover} onChange={(event) => toggleTelegramCover(event.target.checked)} /><span>Прикладывать обложку к посту</span></label>
               {includeTelegramCover && <label className="upload-zone"><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setBatchCoverFile(event.target.files?.[0] ?? null)} /><ImagePlus size={24} /><strong>{batchCoverFile?.name ?? 'Общая обложка'}</strong><span>Необязательно · JPG, PNG или WEBP</span></label>}
-              <label className="field"><span>ПОДПИСЬ К ПОСТУ</span><textarea className="batch-caption" value={batchCaption} onChange={(event) => setBatchCaption(event.target.value)} placeholder="Выбери биты — подпись появится здесь" /></label>
+              <label className="field"><span>ПОДПИСЬ К ПОСТУ</span><textarea className="batch-caption" value={batchCaption} onChange={(event) => setBatchCaption(event.target.value)} placeholder="Добавить подпись (необязательно)" /></label>
               <div className="batch-actions"><button className="copy-button" disabled={!batchCaption.trim()} onClick={() => copyText(batchCaption, 'Подпись пачки')}><Clipboard size={16} /> Скопировать подпись</button></div>
               {cloudAvailable && batchBeats.length > 0 && batchBeats.every((beat) => beat.cloud) && batchFiles.length === 0 &&
                 <DirectTelegramPublication key={batchBeats.map((beat) => beat.id).join(',')} publish={(channel) => publishTelegram(channel, batchBeats, batchCaption, includeTelegramCover ? batchCoverFile ?? undefined : undefined)} />}

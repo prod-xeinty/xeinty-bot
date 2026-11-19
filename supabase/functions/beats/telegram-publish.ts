@@ -40,13 +40,13 @@ export async function channelForPublisher(address: string, userId: number): Prom
   return chat
 }
 
-export async function postAudio(chat: Chat, tracks: { audio: string; title: string }[], caption: string): Promise<string> {
+export async function postAudio(chat: Chat, tracks: { audio: string }[], caption: string): Promise<string> {
   let first: Message
   if (tracks.length === 1) {
     first = await api<Message>('sendAudio', { chat_id: chat.id, ...tracks[0], caption })
   } else {
-    const media = tracks.map(({ audio, title }, index) => ({
-      type: 'audio', media: audio, title, caption: index === 0 ? caption : undefined,
+    const media = tracks.map(({ audio }, index) => ({
+      type: 'audio', media: audio, caption: index === 0 ? caption : undefined,
     }))
     const messages = await api<Message[]>('sendMediaGroup', { chat_id: chat.id, media })
     first = messages[0]

@@ -163,7 +163,7 @@ Deno.serve(async (request) => {
           caption === null || !channel || !/^(@[a-z0-9_]{5,32}|-100[0-9]{5,16})$/i.test(channel)) {
         return reply({ error: 'Нужны @имя или ID канала, до 10 битов и подпись до 1024 символов' }, 400, origin)
       }
-      const { data, error } = await db.from('beats').select('id,title,audio_path,cover_path')
+      const { data, error } = await db.from('beats').select('id,audio_name,audio_path,cover_path')
         .eq('telegram_user_id', userId).in('id', ids)
       if (error) throw error
       const ordered = ids.map((id) => data?.find((beat) => beat.id === id))
@@ -171,8 +171,8 @@ Deno.serve(async (request) => {
         return reply({ error: 'Для публикации нужны твои биты с MP3 в облаке' }, 404, origin)
       }
       const chat = await channelForPublisher(channel, userId)
-      const sign = async (path: string) => {
-        const { data, error } = await db.storage.from(bucket).createSignedUrl(path, 600)
+      const sign = async (path: string, download?: string) => {
+        const { data, error } = await db.storage.from(bucket).createSignedUrl(path, 600, download ? { download } : undefined)
         if (error || !data?.signedUrl) throw new TelegramPublishError('Не удалось получить файл из облака.')
         return data.signedUrl
       }
@@ -181,8 +181,7 @@ Deno.serve(async (request) => {
         cover = await sign(ordered[0].cover_path)
       }
       const tracks = await Promise.all(ordered.map(async (beat) => ({
-        audio: await sign(beat!.audio_path),
-        title: beat!.title,
+        audio: await sign(beat!.audio_path, beat!.audio_name || 'beat.mp3'),
       })))
       const url = await postAudio(chat, tracks, caption)
       const warnings: string[] = []
