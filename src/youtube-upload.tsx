@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import { Dropdown } from './choice-menu'
 import {
   createYoutubeConnection, disconnectYoutube, resumeYoutubeUpload, sendYoutubeChunk,
   startYoutubeUpload, youtubeConnection, type YoutubeConnection, type YoutubeUploadStep,
@@ -40,7 +39,6 @@ export function YoutubeUpload({ initData, beatId, video, fileKey, existingLink, 
   const key = 'xeinty-youtube-upload:' + beatId + ':' + fileKey
   const [connection, setConnection] = useState<YoutubeConnection>()
   const [authUrl, setAuthUrl] = useState('')
-  const [audience, setAudience] = useState('')
   const [busy, setBusy] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState(0)
@@ -80,7 +78,7 @@ export function YoutubeUpload({ initData, beatId, video, fileKey, existingLink, 
   }
 
   async function upload() {
-    if (!video || !audience || request.current) return
+    if (!video || request.current) return
     const controller = new AbortController()
     request.current = controller
     setUploading(true)
@@ -92,7 +90,7 @@ export function YoutubeUpload({ initData, beatId, video, fileKey, existingLink, 
       await beforeStart()
       if (controller.signal.aborted) return
       await startYoutubeUpload(initData, {
-        uploadId, beatId, size: video.size, mimeType: video.type || 'application/octet-stream', madeForKids: audience === 'kids',
+        uploadId, beatId, size: video.size, mimeType: video.type || 'application/octet-stream', madeForKids: false,
       })
       let step: YoutubeUploadStep = await resumeYoutubeUpload(initData, uploadId, controller.signal)
       while ('next' in step) {
@@ -146,10 +144,8 @@ export function YoutubeUpload({ initData, beatId, video, fileKey, existingLink, 
     </>}
     {connection?.connected && <>
       <p className="form-hint">YouTube подключён. Видео будет доступно только тебе.</p>
-      <Dropdown label="Аудитория" placeholder="Видео для детей?" value={audience} disabled={uploading || Boolean(result)} onChange={setAudience}
-        options={[{ value: 'general', label: 'Нет, видео не для детей' }, { value: 'kids', label: 'Да, видео для детей' }]} />
       {!video && <p className="form-hint">Собери видео или выбери файл с устройства.</p>}
-      {(!result || !result.saved) && <button type="button" className="copy-button" disabled={!video || !audience || uploading || busy} onClick={() => void upload()}>
+      {(!result || !result.saved) && <button type="button" className="copy-button" disabled={!video || uploading || busy} onClick={() => void upload()}>
         {uploading ? 'Загружаем…' : result ? 'Повторить сохранение ссылки' : session.current ? 'Продолжить загрузку' : 'Загрузить приватное видео'}
       </button>}
       {(uploading || progress > 0) && <div className="youtube-upload-progress">
