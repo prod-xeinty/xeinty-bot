@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
 import './styles.css'
+import './light-theme.css'
 import { SplashGate } from './SplashScreen'
 
 class AppBoundary extends React.Component<React.PropsWithChildren, { failed: boolean }> {

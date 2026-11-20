@@ -4,7 +4,7 @@ import { PlannedReleases } from './planned-releases'
 import { usePlatformStats, StatsOverview, type StatsRanking } from './platform-stats'
 import xeintyLogo from './assets/xeinty-logo.png'
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
-import { ArrowLeft, ArrowRight, AudioLines, Check, ChevronDown, ChevronRight, ChevronUp, CircleHelp, Clipboard, Download, ExternalLink, FileAudio2, ImagePlus, Link2, ListMusic, Music2, Ellipsis, Plus, Radio, Send, Trash2, UploadCloud, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, AudioLines, Check, ChevronDown, ChevronRight, ChevronUp, CircleHelp, Clipboard, Download, ExternalLink, FileAudio2, ImagePlus, Link2, ListMusic, Music2, Ellipsis, Plus, Radio, Send, Sun, Moon, Trash2, UploadCloud, X } from 'lucide-react'
 import { AudioDock, PlayPauseIcon, useAudioPlayer } from './audio-player'
 import { joinTrackCaption, telegramCaptionLimit } from '../supabase/functions/beats/telegram-caption'
 import { TelegramImport } from './telegram-import'
@@ -68,7 +68,10 @@ function staggerStyle(index: number): CSSProperties {
   return { '--stagger': index } as CSSProperties
 }
 
+type Theme = 'dark' | 'light'
+
 function App({ onStartupReady }: { onStartupReady: () => void }) {
+  const [theme, setTheme] = useState<Theme>(() => document.documentElement.dataset.theme === 'light' ? 'light' : 'dark')
   const [webApp, setWebApp] = useState(getTelegramWebApp)
   const [telegramChecked, setTelegramChecked] = useState(Boolean(webApp))
   const [localReady, setLocalReady] = useState(false)
@@ -386,12 +389,21 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
 
   useEffect(() => {
     if (!webApp) return
-    webApp.setHeaderColor?.('#151520')
-    webApp.setBackgroundColor?.('#151520')
     if (webApp.requestFullscreen) webApp.requestFullscreen()
     else webApp.expand()
     webApp.ready()
   }, [webApp])
+
+  useEffect(() => {
+    const surface = theme === 'light' ? '#f1f1ef' : '#0d0d0e'
+    document.documentElement.dataset.theme = theme
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", surface)
+    try { localStorage.setItem('xeinty-theme', theme) } catch { /* The choice still applies to this session. */ }
+    if (!webApp) return
+    for (const method of ['setHeaderColor', 'setBackgroundColor', 'setBottomBarColor'] as const) {
+      try { webApp[method]?.(surface) } catch { /* Older Telegram clients can reject custom colors. */ }
+    }
+  }, [theme, webApp])
 
   useEffect(() => () => { if (videoUrlRef.current) URL.revokeObjectURL(videoUrlRef.current) }, [])
 
@@ -976,7 +988,15 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
           </>}
           {screen === 'more' && <>
             <div className="page-heading"><div><h1>Ещё</h1></div></div>
-            <button type="button" className="outline-button" onClick={() => navigate('templates')}>Шаблоны публикаций <ArrowRight size={17} /></button>
+            <section className="form-panel theme-panel" aria-labelledby="theme-heading">
+              <div className="section-intro"><h2 id="theme-heading">Оформление</h2></div>
+              <div className="publish-mode theme-switch" role="group" aria-label="Тема оформления"
+                style={{ "--tab-i": theme === "light" ? 1 : 0 } as CSSProperties}>
+                <button type="button" className={theme === "dark" ? "is-active" : undefined} aria-pressed={theme === "dark"} onClick={() => setTheme("dark")}><Moon size={16} aria-hidden="true" /> Тёмная</button>
+                <button type="button" className={theme === "light" ? "is-active" : undefined} aria-pressed={theme === "light"} onClick={() => setTheme("light")}><Sun size={16} aria-hidden="true" /> Светлая</button>
+              </div>
+            </section>
+            <button type="button" className="outline-button" onClick={() => navigate("templates")}>Шаблоны публикаций <ArrowRight size={17} /></button>
           </>}
           {screen === 'templates' && <>
             <button className="back-link" onClick={() => navigate('more')}><ArrowLeft size={17} /> Ещё</button>

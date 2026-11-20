@@ -3,11 +3,23 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#151520" />
+    <meta name="theme-color" content="#0d0d0e" />
+    <script>
+      try {
+        if (localStorage.getItem("xeinty-theme") === "light") {
+          document.documentElement.dataset.theme = "light"
+          document.querySelector("meta[name=theme-color]").content = "#f1f1ef"
+        }
+      } catch {}
+    </script>
+    <style>
+      #startup-status { min-height: 100dvh; display: grid; place-items: center; background: #0d0d0e; color: #f4f4f2; font: 16px sans-serif; }
+      [data-theme="light"] #startup-status { background: #f1f1ef; color: #171717; }
+    </style>
     <title>XEINTY</title>
   </head>
   <body>
-    <div id="root"><div id="startup-status" style="min-height:100dvh;display:grid;place-items:center;background:#0d0d0e;color:#f4f4f2;font:16px sans-serif">Загружаем XEINTY…</div></div>
+    <div id="root"><div id="startup-status">Загружаем XEINTY…</div></div>
     <script>
       window.setTimeout(() => {
         const status = document.getElementById('startup-status')

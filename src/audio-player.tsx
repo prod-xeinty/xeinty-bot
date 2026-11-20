@@ -118,7 +118,7 @@ export function AudioDock({ player, track, cover }: { player: AudioPlayer; track
       <time>{formatTime(elapsed)}</time>
       <input type="range" min={0} max={duration || 1} step="any" value={Math.min(elapsed, duration)} disabled={!duration}
         aria-label="Позиция воспроизведения" aria-valuetext={formatTime(elapsed) + ' из ' + formatTime(duration)}
-        style={{ background: 'linear-gradient(to right, #eee ' + progress * 100 + '%, #666 ' + progress * 100 + '%)' }}
+        style={{ background: 'linear-gradient(to right, var(--seek-played, #eee) ' + progress * 100 + '%, var(--seek-rest, #666) ' + progress * 100 + '%)' }}
         onChange={(event) => player.seek(event.target.valueAsNumber)} />
       <time>{formatTime(duration)}</time>
     </div>
