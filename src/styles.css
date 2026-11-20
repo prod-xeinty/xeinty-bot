@@ -693,6 +693,7 @@ input, textarea { caret-color: #fff; }
 .cover-edit { margin-top: 16px; }
 .video-file-hint { display: grid; justify-items: start; gap: 10px; }
 .video-file-hint > p { margin: 0; }
+.video-file-hint .upload-grid { justify-self: stretch; grid-template-columns: repeat(auto-fit, minmax(min(100%, 125px), 1fr)); }
 .channel-section-title { margin: 0 0 8px; font-size: 16px; }
 
 .publication-history .history-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }

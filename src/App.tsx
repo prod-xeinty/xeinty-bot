@@ -132,6 +132,7 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [savingBeat, setSavingBeat] = useState(false)
+  const [videoInputs, setVideoInputs] = useState<{ beatId: string; audio?: File; cover?: File }>()
   const [ownVideo, setOwnVideo] = useState<{ beatId: string; file: File }>()
   const [videoResult, setVideoResult] = useState<{ beatId: string; url: string; blob: Blob; size: number; seconds: number } | null>(null)
   const shellRef = useRef<HTMLDivElement>(null)
@@ -141,8 +142,11 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
   const pendingCloudWrites = useRef(new Map<string, Promise<void>>())
   const selected = beats.find((beat) => beat.id === selectedId) ?? beats[0]
   const latest = beats[0]
-  const hasVideoAudio = Boolean(selected.audioFile || selected.audioUrl)
-  const hasVideoCover = Boolean(selected.coverFile || selected.coverUrl)
+  const temporaryVideoInputs = videoInputs?.beatId === selected.id ? videoInputs : undefined
+  const needsVideoAudio = !selected.audioFile && !selected.audioUrl
+  const needsVideoCover = !selected.coverFile && !selected.coverUrl
+  const hasVideoAudio = !needsVideoAudio || Boolean(temporaryVideoInputs?.audio)
+  const hasVideoCover = !needsVideoCover || Boolean(temporaryVideoInputs?.cover)
   const missingVideoFiles = !hasVideoAudio && !hasVideoCover ? 'обложки и аудиофайла' : !hasVideoCover ? 'обложки' : !hasVideoAudio ? 'аудиофайла' : ''
   const selectedOwnVideo = ownVideo?.beatId === selected.id ? ownVideo.file : undefined
   const youtubeVideo = videoSource === 'own' ? selectedOwnVideo : videoResult?.beatId === selected.id ? videoResult.blob : undefined
@@ -646,6 +650,22 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
     }
     else if (!updated.isDemo) void saveBeatMetadata(storedBeat(updated)).catch(() => notify('Изменения не сохранились на устройстве'))
   }
+  function chooseVideoInput(kind: 'audio' | 'cover', file: File | undefined) {
+    if (!file || videoStage) return
+    const supported = kind === 'audio' ? /\.(mp3|wav)$/i : /\.(jpe?g|png|webp)$/i
+    if (!supported.test(file.name)) {
+      setVideoError(kind === 'audio' ? 'Выбери аудиофайл MP3 или WAV.' : 'Выбери обложку JPG, PNG или WEBP.')
+      return
+    }
+    setVideoError('')
+    setVideoInputs({ ...temporaryVideoInputs, beatId: selected.id, [kind]: file })
+    if (videoResult?.beatId === selected.id) {
+      URL.revokeObjectURL(videoResult.url)
+      videoUrlRef.current = null
+      setVideoResult(null)
+    }
+  }
+
   async function createVideo() {
     if (videoStage) return
     if (missingVideoFiles) {
@@ -658,8 +678,8 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
     setVideoStage('preparing')
     const started = performance.now()
     try {
-      const audio = selected.audioFile ?? await remoteFile(selected.audioUrl!, selected.audioName ?? 'preview.mp3')
-      const cover = selected.coverFile ?? await remoteFile(selected.coverUrl!, 'cover.jpg')
+      const audio = selected.audioFile ?? (needsVideoAudio ? temporaryVideoInputs?.audio : undefined) ?? await remoteFile(selected.audioUrl!, selected.audioName ?? 'preview.mp3')
+      const cover = selected.coverFile ?? (needsVideoCover ? temporaryVideoInputs?.cover : undefined) ?? await remoteFile(selected.coverUrl!, 'cover.jpg')
       const blob = await makeStaticVideo(audio, cover, setVideoStage)
       if (videoUrlRef.current) URL.revokeObjectURL(videoUrlRef.current)
       const url = URL.createObjectURL(blob)
@@ -707,6 +727,7 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
         URL.revokeObjectURL(videoResult.url)
         setVideoResult(null)
       }
+      setVideoInputs((inputs) => inputs?.beatId === beat.id ? undefined : inputs)
       setBeats((all) => all.filter((item) => item.id !== beat.id))
       setConfirmDelete(false)
       if (screen === 'detail') navigate('library')
@@ -917,12 +938,30 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
               <div className="video-tool"><Dropdown label="Видео для YouTube" value={videoSource} onChange={(value) => setVideoSource(value === 'own' ? 'own' : 'generated')}
                   options={[{ value: 'generated', label: 'Собрать видео в XEINTY' }, { value: 'own', label: 'Приложить своё видео' }]} />
                 {videoSource === 'own' ? <OwnYoutubeVideo key={selected.id} file={selectedOwnVideo} onChange={(file) => setOwnVideo(file ? { beatId: selected.id, file } : undefined)} /> : <>
+                  {(needsVideoAudio || needsVideoCover) && <div className="video-file-hint" key={selected.id}>
+                    <p className="form-hint">Файлы с устройства используются только для сборки видео.</p>
+                    {needsVideoAudio && !hasVideoAudio && selected.telegramSourceUrl && sourcePostLink(selected.telegramSourceUrl)}
+                    <div className="upload-grid">
+                      {needsVideoAudio && <label className="upload-zone">
+                        <input type="file" aria-label="Аудио для видео" accept=".mp3,.wav,audio/mpeg,audio/wav" disabled={Boolean(videoStage)}
+                          onChange={(event) => { chooseVideoInput('audio', event.currentTarget.files?.[0]); event.currentTarget.value = '' }} />
+                        <FileAudio2 size={22} aria-hidden="true" />
+                        <strong>{temporaryVideoInputs?.audio?.name ?? 'Выбрать аудио'}</strong><span>MP3 или WAV</span>
+                      </label>}
+                      {needsVideoCover && <label className="upload-zone">
+                        <input type="file" aria-label="Обложка для видео" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" disabled={Boolean(videoStage)}
+                          onChange={(event) => { chooseVideoInput('cover', event.currentTarget.files?.[0]); event.currentTarget.value = '' }} />
+                        <ImagePlus size={22} aria-hidden="true" />
+                        <strong>{temporaryVideoInputs?.cover?.name ?? 'Выбрать обложку'}</strong><span>JPG, PNG или WEBP</span>
+                      </label>}
+                    </div>
+                  </div>}
                   <button className="primary-button video-action" type="button" onClick={createVideo} disabled={videoStage !== null}>{videoStage ? 'Сборка идёт…' : 'Собрать MP4'} {!videoStage && <ArrowRight size={18} />}</button>
                   {videoStage && <p className="video-status" role="status">{videoStage === 'loading' ? 'Загружаем видеодвижок — около 31 МБ…' : videoStage === 'preparing' ? 'Подготавливаем файлы…' : 'Собираем видео. Не закрывай Telegram…'}</p>}
                   <p className="video-hint">{videoProfileLabel}</p>
                   {videoFileHintId === selected.id && missingVideoFiles && <div className="video-file-hint">
                     <p className="video-error" role="alert">Для сборки MP4 не хватает {missingVideoFiles}.</p>
-                    <button type="button" className="outline-button" onClick={() => openBeat(selected)}>Открыть карточку бита <ArrowRight size={16} /></button>
+                    {!hasVideoCover && <button type="button" className="outline-button" onClick={() => openBeat(selected)}>Открыть карточку бита <ArrowRight size={16} /></button>}
                   </div>}
                   {videoError && <p className="video-error" role="alert">{videoError}</p>}
                   {videoResult?.beatId === selected.id && <div className="video-result"><video src={videoResult.url} controls playsInline preload="metadata" aria-label={`Готовое видео ${selected.title}`} /><p>MP4 · {(videoResult.size / 1024 / 1024).toFixed(1)} МБ · сборка {videoResult.seconds} с</p><div className="video-save-actions"><button className="video-download" onClick={saveVideo}><Download size={17} /> Сохранить MP4</button><a className="video-download" href="https://studio.youtube.com/" target="_blank" rel="noreferrer">Открыть YouTube Studio <ExternalLink size={16} /></a></div><p>Загрузи сохранённый MP4 в Studio. Studio откроется отдельно от XEINTY.</p></div>}
