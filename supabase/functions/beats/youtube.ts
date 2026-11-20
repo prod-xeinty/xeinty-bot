@@ -241,8 +241,8 @@ async function changeSchedule(db: SupabaseClient, owner: number, cfg: NonNullabl
   return sync(confirmed, result.status.privacyStatus === 'private' && confirmed === desired)
 }
 
-async function youtubeStats(db: SupabaseClient, userId: number, cfg: NonNullable<ReturnType<typeof config>>): Promise<Result> {
-  const rows = (await publicationLinks(db, userId, 'youtube')).map((row) => ({ ...row, videoId: linkedVideoId(row.link) }))
+async function youtubeStats(db: SupabaseClient, userId: number, cfg: NonNullable<ReturnType<typeof config>>, beatId?: string): Promise<Result> {
+  const rows = (await publicationLinks(db, userId, 'youtube', beatId)).map((row) => ({ ...row, videoId: linkedVideoId(row.link) }))
   const ids = [...new Set(rows.flatMap((row) => row.videoId ? [row.videoId] : []))]
   const metrics = new Map<string, { views: number | null; likes: number | null; comments: number | null; channel?: string; visibility?: string }>()
   if (ids.length) {
@@ -280,7 +280,7 @@ async function youtubeStats(db: SupabaseClient, userId: number, cfg: NonNullable
     linkedVideos: ids.length,
     fetchedAt: new Date().toISOString(),
   }
-  const series = await dailyViews(db, userId, 'youtube', data).catch(() => null)
+  const series = beatId ? null : await dailyViews(db, userId, 'youtube', data).catch(() => null)
   return { data: { ...data, series } }
 }
 
@@ -307,7 +307,7 @@ export async function youtubeAction(db: SupabaseClient, userId: number, body: Re
   }
   if (!cfg) return { data: { error: 'Подключение YouTube ещё не настроено.' }, status: 503 }
   try {
-    if (action === 'youtube-stats') return await youtubeStats(db, userId, cfg)
+    if (action === 'youtube-stats') return await youtubeStats(db, userId, cfg, typeof body.beatId === 'string' ? body.beatId : undefined)
 
     if (action === 'youtube-schedule-refresh') return await refreshSchedule(db, userId, cfg, body.links)
     if (action === 'youtube-schedule') return await changeSchedule(db, userId, cfg, body)

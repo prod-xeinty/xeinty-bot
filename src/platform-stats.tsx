@@ -10,7 +10,9 @@ const numberFormat = new Intl.NumberFormat('ru-RU')
 const timeFormat = new Intl.DateTimeFormat('ru-RU', { dateStyle: 'short', timeStyle: 'short' })
 
 export function usePlatformStats(platform: StatsPlatform, initData?: string, activeView?: string) {
-  const [snapshot, setSnapshot] = useState<{ data: PlatformStats; session: string; platform: StatsPlatform }>()
+  type Snapshot = { data: PlatformStats; session: string; platform: StatsPlatform; view: string }
+  const [overview, setOverview] = useState<Snapshot>()
+  const [detail, setDetail] = useState<Snapshot>()
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [revision, setRevision] = useState(0)
@@ -20,15 +22,17 @@ export function usePlatformStats(platform: StatsPlatform, initData?: string, act
     const request = new AbortController()
     setError('')
     setLoading(true)
-    void loadPlatformStats(initData, platform, request.signal).then((data) => {
-      if (!request.signal.aborted) setSnapshot({ data, session: initData, platform })
+    const beatId = activeView === 'overview' ? undefined : activeView
+    void loadPlatformStats(initData, platform, request.signal, beatId).then((data) => {
+      if (!request.signal.aborted) (beatId ? setDetail : setOverview)({ data, session: initData, platform, view: activeView })
     }).catch((failure) => {
       if (!request.signal.aborted) setError(failure instanceof Error ? failure.message : 'Не удалось загрузить статистику.')
     }).finally(() => { if (!request.signal.aborted) setLoading(false) })
     return () => request.abort()
   }, [platform, initData, activeView, revision])
 
-  const stats = snapshot?.session === initData && snapshot?.platform === platform ? snapshot.data : undefined
+  const snapshot = activeView === 'overview' ? overview : detail
+  const stats = snapshot?.view === activeView && snapshot?.session === initData && snapshot?.platform === platform ? snapshot?.data : undefined
   return { stats, error, loading, refresh: () => setRevision((value) => value + 1) }
 }
 

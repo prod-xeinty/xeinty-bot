@@ -26,7 +26,7 @@ async function connectBot() {
   }
 }
 
-async function getBot() {
+export async function getBot() {
   connection ??= connectBot().catch((error) => { connection = undefined; throw error })
   const client = await connection
   if (!client.connected) {
@@ -48,8 +48,8 @@ function botChatId(channel: string) {
   return String(-1_000_000_000_000 - Number(channel))
 }
 
-export async function telegramStats(db: SupabaseClient, userId: number) {
-  const rows = (await publicationLinks(db, userId, 'telegram')).map((row) => ({ ...row, post: telegramPost(row.link) }))
+export async function telegramStats(db: SupabaseClient, userId: number, beatId?: string) {
+  const rows = (await publicationLinks(db, userId, 'telegram', beatId)).map((row) => ({ ...row, post: telegramPost(row.link) }))
   const privateChannels = new Set(rows.flatMap(({ post }) => post?.private ? [botChatId(post.channel)] : []))
   const connected = new Set<string>()
   if (privateChannels.size) {
@@ -133,6 +133,6 @@ export async function telegramStats(db: SupabaseClient, userId: number) {
     unsupported: rows.some(({ post }) => post === null),
     fetchedAt: new Date().toISOString(),
   }
-  const series = await dailyViews(db, userId, 'telegram', data).catch(() => null)
+  const series = beatId ? null : await dailyViews(db, userId, 'telegram', data).catch(() => null)
   return { ...data, series }
 }

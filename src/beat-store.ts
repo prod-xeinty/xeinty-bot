@@ -18,6 +18,8 @@ export type StoredBeat = {
   youtubeDescription: string
   youtubeKeywords: string
   telegramLink: string
+  telegramSourceUrl?: string | null
+  telegramSourceDate?: string | null
   youtubeLink: string
   youtubePublishAt?: string | null
   publications?: BeatPublication[]
