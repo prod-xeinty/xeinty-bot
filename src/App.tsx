@@ -5,7 +5,7 @@ import { usePlatformStats, StatsOverview, type StatsRanking } from './platform-s
 import xeintyLogo from './assets/xeinty-logo.png'
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { ArrowLeft, ArrowRight, AudioLines, Check, ChevronDown, ChevronRight, ChevronUp, CircleHelp, Clipboard, Download, ExternalLink, FileAudio2, ImagePlus, Link2, ListMusic, Music2, Ellipsis, Plus, Radio, Send, Sun, Moon, Trash2, UploadCloud, X } from 'lucide-react'
-import { AudioDock, PlayPauseIcon, useAudioPlayer } from './audio-player'
+import { AudioDock, PlayPauseIcon, useAudioPlayer, type Track } from './audio-player'
 import { joinTrackCaption, telegramCaptionLimit } from '../supabase/functions/beats/telegram-caption'
 import { RecordMenu } from './record-menu'
 import { TelegramImport } from './telegram-import'
@@ -17,7 +17,7 @@ import { getTelegramWebApp } from './telegram'
 import { makeStaticVideo, videoProfileLabel, type VideoStage } from './video'
 import { saveVideoFile } from './save-video'
 import { deleteStoredBeat, loadStoredBeats, saveBeatCover, saveBeatMetadata, saveNewBeat, type StoredBeat } from './beat-store'
-import { changeYoutubeSchedule, refreshYoutubeSchedule, cloudConfigured, connectTelegramChannel, disconnectTelegramChannel, loadTelegramChannels, loadTelegramImportFile, loadTelegramImportSuggestions, type TelegramImportSuggestion, type BeatCursor, type TelegramChannel, type TelegramPublication, type PublicationLinks, createCloudBeat, deleteCloudBeat, loadCloudBeats, publishCloudTelegram, remoteFile, replaceCloudCover, updateCloudBeat } from './cloud-beats'
+import { changeYoutubeSchedule, refreshYoutubeSchedule, cloudConfigured, connectTelegramChannel, disconnectTelegramChannel, loadTelegramAudioUrl, loadTelegramChannels, loadTelegramImportFile, loadTelegramImportSuggestions, type TelegramImportSuggestion, type BeatCursor, type TelegramChannel, type TelegramPublication, type PublicationLinks, createCloudBeat, deleteCloudBeat, loadCloudBeats, publishCloudTelegram, remoteFile, replaceCloudCover, updateCloudBeat } from './cloud-beats'
 import { normalizeMusicKey } from './music-key'
 import { detectTelegramAudioMetadata } from '../supabase/functions/beats/audio-metadata'
 import { Dropdown, KeyPicker } from './choice-menu'
@@ -155,7 +155,7 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
     ? selectedOwnVideo ? [selectedOwnVideo.name, selectedOwnVideo.size, selectedOwnVideo.lastModified].join(':') : 'own'
     : videoResult?.beatId === selected.id ? videoResult.url : 'generated'
   const audioPlayer = useAudioPlayer(notify)
-  const playingTrack = beats.find((beat) => beat.id === audioPlayer.trackId && beat.audioUrl)
+  const playingTrack = beats.find((beat) => beat.id === audioPlayer.trackId)
 
   function sourcePostLink(url: string) {
     return <a className="player-next" href={url} target="_blank" rel="noreferrer"
@@ -164,11 +164,30 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
     </a>
   }
 
+  function canPlay(beat: Beat) {
+    return Boolean(beat.audioUrl || (beat.cloud && beat.telegramSourceUrl && webApp?.initData))
+  }
+
+  function audioTrack(beat: Beat): Track {
+    const source = beat.telegramSourceUrl
+    const session = webApp?.initData
+    return {
+      id: beat.id, title: beat.title, audioUrl: beat.audioUrl,
+      loadAudio: beat.cloud && source && session ? (signal) => loadTelegramAudioUrl(session, beat.id, signal) : undefined,
+      openSource: source ? () => {
+        if (webApp?.openTelegramLink) webApp.openTelegramLink(source)
+        else window.open(source, '_blank', 'noopener,noreferrer')
+      } : undefined,
+    }
+  }
+
   function trackPlayButton(beat: Beat) {
-    const playing = audioPlayer.trackId === beat.id && audioPlayer.playing
-    return <button type="button" className="player-play" onClick={() => audioPlayer.toggle(beat)}
-      aria-label={(playing ? 'Пауза: ' : 'Воспроизвести: ') + beat.title}>
-      <PlayPauseIcon playing={playing} />
+    const active = audioPlayer.trackId === beat.id
+    const playing = active && audioPlayer.playing
+    const loading = active && audioPlayer.loading
+    return <button type="button" className="player-play" onClick={() => audioPlayer.toggle(audioTrack(beat))}
+      disabled={loading} aria-busy={loading} aria-label={(loading ? 'Загружаем: ' : playing ? 'Пауза: ' : 'Воспроизвести: ') + beat.title}>
+      <PlayPauseIcon playing={playing} loading={loading} />
     </button>
   }
   const savedAudioBeats = beats.filter((beat) => !beat.isDemo && (beat.audioFile || beat.audioUrl))
@@ -880,7 +899,7 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
             <section className="feature-section" aria-label="Последняя запись">
               <div className="feature-card">
                 <div className="player-top"><Cover beat={latest} className="feature-cover" /><div className="feature-content"><span className="feature-status">{latest.isDemo ? 'Демо-проект' : latest.status}</span><h2>{latest.title}</h2>{latestMetadata && <p>{latestMetadata}</p>}</div><button className="player-open" onClick={() => openBeat(latest)} aria-label={`Открыть ${latest.title}`}><ChevronRight size={19} /></button></div>
-                <div className="player-footer"><span>{latest.audioUrl ? latest.audioName : latest.telegramSourceUrl ? 'Аудио в исходном посте' : 'Аудио не загружено'}</span><div className="player-controls">{latest.audioUrl ? trackPlayButton(latest) : latest.telegramSourceUrl ? sourcePostLink(latest.telegramSourceUrl) : <button className="player-publish" onClick={() => openPublish(latest)} aria-label="Подготовить публикацию"><Send size={16} /><span>Публикация</span></button>}<button className="player-next" onClick={() => openBeat(latest)}>Открыть запись <ArrowRight size={16} /></button></div></div>
+                <div className="player-footer"><span>{latest.audioUrl ? latest.audioName : latest.telegramSourceUrl ? 'Аудио в исходном посте' : 'Аудио не загружено'}</span><div className="player-controls">{canPlay(latest) ? trackPlayButton(latest) : latest.telegramSourceUrl ? sourcePostLink(latest.telegramSourceUrl) : <button className="player-publish" onClick={() => openPublish(latest)} aria-label="Подготовить публикацию"><Send size={16} /><span>Публикация</span></button>}<button className="player-next" onClick={() => openBeat(latest)}>Открыть запись <ArrowRight size={16} /></button></div></div>
               </div>
             </section>
             <section className="tools-section"><div className="section-heading"><h2>Рабочие шаги</h2></div><div className="tool-grid"><button style={staggerStyle(0)} onClick={() => openBeat(latest, 'data')}><ListMusic size={20} /><span>Параметры</span></button><button style={staggerStyle(1)} onClick={() => openPublish(latest)}><Clipboard size={20} /><span>Публикация</span></button><button style={staggerStyle(2)} onClick={() => openBeat(latest, 'publications')}><Link2 size={20} /><span>Публикации</span></button></div></section>
@@ -897,9 +916,12 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
                     <span className="row-main"><strong>{beat.title}</strong>{metadata && <small>{metadata}</small>}</span>
                     <span className="row-meta">{beat.telegramSourceUrl ? "Telegram" : beat.cloud ? "Облако" : beat.isDemo ? beat.status : "На устройстве"}</span>
                   </button>
+                  <div className="record-actions">
+                  {canPlay(beat) && trackPlayButton(beat)}
                   <RecordMenu title={beat.title} openRecord={() => openBeat(beat)} post={recordPost(beat)}
                     openTelegram={webApp?.openTelegramLink ? (url) => webApp.openTelegramLink?.(url) : undefined}
                     remove={!beat.isDemo ? () => deleteBeat(beat) : undefined} deleting={deleting} />
+                  </div>
                 </div>
               })}
             </div>{!libraryBeats.length && <p className="form-hint library-empty">По этому запросу ничего не найдено.</p>}{moreCloudBeats()}<p className="demo-note"><CircleHelp size={15} /> {cloudAvailable ? 'Облачная библиотека доступна в Telegram на других устройствах.' : 'Примеры показывают интерфейс. Свои файлы здесь сохраняются на этом устройстве.'}</p></section>
@@ -1124,7 +1146,7 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
           {screen === 'detail' && selected && <>
             <button className="back-link" onClick={() => navigate(focusedPublication ? 'publish' : detailFromStats ? 'overview' : 'library')}>
               <ArrowLeft size={17} /> {focusedPublication ? 'К расписанию' : detailFromStats ? 'К статистике' : 'Библиотека'}
-            </button><section className="detail-hero"><Cover beat={selected} className="detail-cover" /><div className="detail-identity"><div className="eyebrow">{selected.isDemo ? 'Демо-проект' : selected.status}</div><h1>{selected.title}</h1><p>{selected.tags}</p>{detailMetadata.length > 0 && <div className="meta-row"><span>{detailMetadata[0]}</span>{detailMetadata[1] && <><i aria-hidden="true" /><span>{detailMetadata[1]}</span></>}</div>}<div className="detail-audio">{selected.audioUrl ? <><FileAudio2 size={17} /><span>{selected.audioName}</span>{trackPlayButton(selected)}</> : selected.telegramSourceUrl ? sourcePostLink(selected.telegramSourceUrl) : <><Music2 size={18} /><span>{selected.isDemo ? 'Аудио для этого демо-бита не загружено' : 'Аудиофайл не добавлен'}</span></>}</div></div></section>
+            </button><section className="detail-hero"><Cover beat={selected} className="detail-cover" /><div className="detail-identity"><div className="eyebrow">{selected.isDemo ? 'Демо-проект' : selected.status}</div><h1>{selected.title}</h1><p>{selected.tags}</p>{detailMetadata.length > 0 && <div className="meta-row"><span>{detailMetadata[0]}</span>{detailMetadata[1] && <><i aria-hidden="true" /><span>{detailMetadata[1]}</span></>}</div>}<div className="detail-audio">{selected.audioUrl ? <><FileAudio2 size={17} /><span>{selected.audioName}</span>{trackPlayButton(selected)}</> : selected.telegramSourceUrl ? <>{sourcePostLink(selected.telegramSourceUrl)}{canPlay(selected) && trackPlayButton(selected)}</> : <><Music2 size={18} /><span>{selected.isDemo ? 'Аудио для этого демо-бита не загружено' : 'Аудиофайл не добавлен'}</span></>}</div></div></section>
             <div className="detail-tabs" role="tablist" aria-label="Разделы бита">{([['data', 'Данные'], ['publications', 'Публикации']] as [DetailTab, string][]).map(([id, label]) => <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? 'is-active' : ''} onClick={() => setTab(id)}>{label}</button>)}</div>
             {tab === 'data' && <div className="detail-section" key="data"><div className="section-intro"><h2>Данные записи</h2><p>Изменения сохраняются автоматически.</p></div><div className="data-card data-card--editable"><label className="field"><span>НАЗВАНИЕ</span><input aria-label="Название записи" maxLength={120} value={selected.title} onChange={(event) => updateBeat({ title: event.target.value })} /></label><label className="field"><span>ТЕМП (BPM)</span><input aria-label="Темп BPM" type="number" min="1" max="300" value={selected.bpm === '—' ? '' : selected.bpm} onChange={(event) => updateBeat({ bpm: event.target.value || '—' })} /></label><div className="field"><span>ТОНАЛЬНОСТЬ</span><KeyPicker value={selected.key} label="Тональность бита" onChange={(key) => updateBeat({ key })} onCommit={(value) => { const key = normalizeMusicKey(value); if (key !== null) updateBeat({ key: key || "—" }); else { updateBeat({ key: "—" }); notify("Не распознал тональность; выбери вариант из списка.") } }} /></div><label className="field"><span>ТЕГИ</span><input aria-label="Теги бита" value={selected.tags} onChange={(event) => updateBeat({ tags: event.target.value })} /></label></div>
               {importedMetadata && <button type="button" className="outline-button cover-edit" onClick={() => updateBeat(importedMetadata)}>
@@ -1139,7 +1161,7 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
         </main>
       </div>
       {audioPlayer.element}
-      {playingTrack && <AudioDock player={audioPlayer} track={playingTrack} cover={<Cover beat={playingTrack} className="audio-dock-cover" />} />}
+      {playingTrack && <AudioDock player={audioPlayer} track={audioTrack(playingTrack)} cover={<Cover beat={playingTrack} className="audio-dock-cover" />} />}
       <nav className="bottom-nav" aria-label="Главная навигация" data-has-active={activeMobileIndex >= 0} style={{ '--nav-i': Math.max(0, activeMobileIndex), '--nav-count': mobileNav.length } as CSSProperties}>{mobileNav.map(({ id, label, Icon }) => <button key={id} className={activeScreen === id ? 'is-active' : ''} onClick={() => navigate(id)}><Icon size={21} /><span>{label}</span></button>)}</nav>
       {toast && <div className="toast" role="status"><Check size={17} />{toast}</div>}
     </div>
