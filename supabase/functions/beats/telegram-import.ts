@@ -29,7 +29,7 @@ function describe(post: Api.Message, base: string): AudioPost | null {
   const filename = file.attributes.find((item) => item instanceof Api.DocumentAttributeFilename)
   const name = filename instanceof Api.DocumentAttributeFilename ? filename.fileName.trim().slice(0, 255) : ''
   if (audio instanceof Api.DocumentAttributeAudio && audio.voice) return null
-  if (!file.mimeType.startsWith('audio/') && !/\.(mp3|wav|flac|m4a|ogg|aiff?)$/i.test(name)) return null
+  if (!file.mimeType.startsWith('audio/') && !/\.(mp3|wav|flac|m4a|ogg|aac|aiff?|opus)$/i.test(name)) return null
   const audioTitle = audio instanceof Api.DocumentAttributeAudio ? audio.title?.trim() : undefined
   const title = audioTitle || name.replace(/\.[^.]+$/, '').trim() || 'Аудио ' + post.id
   const metadata = detectTelegramAudioMetadata(name, audioTitle, post.message)
