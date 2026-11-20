@@ -26,6 +26,7 @@ export type TelegramWebApp = {
   offEvent: (event: 'themeChanged', callback: () => void) => void
   setHeaderColor?: (color: string) => void
   setBackgroundColor?: (color: string) => void
+  setBottomBarColor?: (color: string) => void
 }
 
 declare global {

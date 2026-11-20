@@ -51,6 +51,10 @@ XEINTY feels like a compact music device in studio light: a nearly black workspa
 
 The canvas and work panels use a neutral graphite ramp. The current-beat card and upload action carry the brightest silver. Text has three roles: near white for content, mid gray for supporting copy and dark ink on light surfaces. Directional neutral highlights create depth; there are no colored glows.
 
+### Light theme
+
+The optional light theme uses a soft neutral canvas, white work surfaces and graphite text. Silver feature cards and the original cover art carry across both themes. Dark controls anchor the light theme in the navigation, player and primary actions. Portaled menus and the launch screen follow the saved theme.
+
 ## Typography
 
 Manrope is used throughout, including Cyrillic headings, track names, labels and controls. Page titles are 27–36px and medium weight; sections are 16–22px. Small metadata is at least 11px, while mobile text inputs are 16px to avoid zoom and improve legibility.

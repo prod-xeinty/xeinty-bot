@@ -1,0 +1,125 @@
+/* The silver hero and cover art use the same palette in both themes. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --light-canvas: #f1f1ef;
+  --light-panel: #fbfbf9;
+  --light-raised: #e9e9e6;
+  --light-white: #fff;
+  --light-ink: #171717;
+  --light-muted: #565653;
+  --light-line: #1c1c1829;
+  --light-control-line: #797975;
+  --light-hover: #1c1c1810;
+  --light-shadow: 0 10px 24px #29292612;
+  --seek-played: #242424;
+  --seek-rest: #c6c6c1;
+  color: var(--light-ink);
+  background: var(--light-canvas);
+}
+
+[data-theme="light"] .app-shell { background: var(--light-canvas); }
+[data-theme="light"] .ambient-stage {
+  --f1-c1: #d5d5d1; --f1-c2: #e9e9e6;
+  --f2-c1: #d7d7d3; --f2-c2: #eeeeeb;
+}
+[data-theme="light"] :is(button, input, textarea, a, summary):focus-visible { outline-color: var(--light-ink); }
+[data-theme="light"] :is(input, textarea) { caret-color: var(--light-ink); }
+[data-theme="light"] :is(.youtube-release-options input[type="datetime-local"], .schedule-editor .field input) { color-scheme: light; }
+[data-theme="light"] :is(.topbar, .desktop-rail, .rail-footer, .beat-list, .beat-row, .detail-tabs,
+  .data-card--editable .field, .delete-beat, .publication-link, .import-results, .stats-metric-card,
+  .youtube-stats-list, .youtube-stats-list li + li, .view-history, .view-history-period, .view-history-chart,
+  .history-row, .history-schedule, .channel-row, .batch-import, .batch-selection-list li) { border-color: var(--light-line); }
+[data-theme="light"] .topbar { box-shadow: none; }
+[data-theme="light"] .desktop-rail nav::before { background: var(--light-raised); border-color: var(--light-line); box-shadow: inset 0 1px 0 #fff; }
+[data-theme="light"] :is(.desktop-rail nav button, .bottom-nav button):not(.is-active) { color: var(--light-muted); }
+[data-theme="light"] .desktop-rail nav button.is-active, [data-theme="light"] .desktop-rail nav button:hover { color: var(--light-ink); }
+[data-theme="light"] .desktop-rail nav button:hover:not(.is-active) { background: var(--light-hover); }
+[data-theme="light"] :is(.bottom-nav, .audio-dock) { background: #fbfbf9f5; border-color: var(--light-line); box-shadow: 0 10px 24px #25252229; }
+[data-theme="light"] .bottom-nav::before { background: #292929; box-shadow: inset 0 1px 0 #ffffff25; }
+[data-theme="light"] .bottom-nav button.is-active { color: #fff; }
+[data-theme="light"] .topbar-action { background: var(--light-panel); color: var(--light-ink); border-color: var(--light-control-line); box-shadow: 0 3px 7px #25252215; }
+
+[data-theme="light"] :is(.form-panel, .data-card, .publication-card, .links-panel, .tools-section, .list-section,
+  .publish-empty, .overview-hero, .future-grid > div, .startup-error) {
+  color: var(--light-ink); background: var(--light-panel); border-color: var(--light-line); box-shadow: var(--light-shadow);
+}
+[data-theme="light"] :is(.feature-card, .detail-hero) { box-shadow: inset 0 1px 1px #fff, 0 0 0 1px #72726d80, 0 11px 28px #22222225; }
+[data-theme="light"] :is(.tool-grid button, .video-tool, .next-feature, .upload-zone) {
+  color: var(--light-ink); background: linear-gradient(155deg, #fff, #eaeae7); border-color: var(--light-control-line); box-shadow: inset 0 1px 0 #fff; text-shadow: none;
+}
+[data-theme="light"] .upload-zone:hover { background: var(--light-raised); }
+[data-theme="light"] .row-wave { background: var(--light-raised); border-color: var(--light-line); box-shadow: none; }
+[data-theme="light"] .row-wave .waveform--compact i { background: #595957; }
+[data-theme="light"] :is(.beat-row, .back-link:hover, .video-tool-head strong, .stats-notice strong, .link-input a, .publication-counters dd) { color: var(--light-ink); }
+[data-theme="light"] :is(.beat-row:hover, .publish-search-results button:hover, .publish-search-results button:focus-visible,
+  .youtube-stats-list button:hover, .youtube-stats-list button:focus-visible, .import-track-list label:hover) { background: var(--light-hover); }
+[data-theme="light"] :is(.beat-row:hover .row-arrow, .youtube-stats-list button:hover .stats-row-arrow) { color: var(--light-ink); }
+
+[data-theme="light"] :is(.page-heading p, .rail-head span, .rail-footer, .topbar-badge, .startup-error p, .library-context, .library-context span:last-child,
+  .row-main small, .row-meta, .row-arrow, .demo-note, .back-link, .section-intro p, .detail-footnote, .form-hint, .data-card span,
+  .field > span, .keywords-field, .panel-title p, .upload-zone span, .create-submit > span, .delete-beat p, .publish-empty p,
+  .publication-card-head span, .video-tool-head p, .video-hint, .video-status, .video-result p, .next-feature p, .next-feature > span,
+  .stats-coverage, .stats-list-heading span, .stats-metric-card dt, .stats-metric-card dd span, .stats-row-arrow, .stats-notice p,
+  .overview-hero p, .youtube-stats-actions small, .view-history-axis, .release-day h3, .release-list time, .schedule-editor .field small,
+  .publication-counters dt, .history-row-body small, .youtube-release-options small, .youtube-upload-progress,
+  .channel-identity small, .channel-suggestions small, .import-track-list small, .batch-library-head span,
+  .publish-search-results button small, .caption-preview h2) { color: var(--light-muted); }
+
+[data-theme="light"] :is(.primary-button, .startup-error button) { color: #fff; background: #252525; border-color: #252525; }
+[data-theme="light"] .primary-button:hover { background: #3b3b3b; }
+[data-theme="light"] :is(.outline-button:not(.source-post-link), .video-download, .delete-beat button, .copy-button) {
+  color: var(--light-ink); border-color: var(--light-control-line); background: var(--light-panel);
+}
+[data-theme="light"] :is(.outline-button:not(.source-post-link), .video-download, .delete-beat button, .copy-button):hover:not(:disabled) { background: var(--light-raised); }
+[data-theme="light"] .outline-button:disabled { opacity: .55; }
+[data-theme="light"] :is(.video-error, .delete-beat .delete-beat-confirm) { color: #94261f; }
+[data-theme="light"] .delete-beat .delete-beat-confirm { border-color: #a6433e; }
+[data-theme="light"] :is(.field input, .field select, .publication-card textarea, .caption-template textarea, .batch-caption,
+  .keywords-field input, .link-input, .beat-search, .choice-trigger, .choice-input input) {
+  background: var(--light-white); border-color: var(--light-control-line); color: var(--light-ink); box-shadow: none;
+}
+[data-theme="light"] :is(.link-input input, .beat-search input) { background: transparent; color: var(--light-ink); }
+[data-theme="light"] :is(.field input, .beat-search input, textarea, .keywords-field input)::placeholder { color: #60605d; }
+[data-theme="light"] :is(.choice-trigger svg, .choice-input svg, .choice-placeholder, .choice-group, .choice-empty) { color: var(--light-muted); }
+[data-theme="light"] :is(.beat-search:focus-within, .choice-trigger[aria-expanded="true"], .choice-trigger:not(:disabled):hover, .choice-input input[aria-expanded="true"]) {
+  border-color: var(--light-ink); background: #f6f6f4; box-shadow: none;
+}
+[data-theme="light"] .choice-menu { color: var(--light-ink); border-color: var(--light-line); background: #fbfbf9f5; box-shadow: 0 14px 32px #22222227; }
+[data-theme="light"] .choice-option { color: var(--light-ink); }
+[data-theme="light"] :is(.choice-option:hover:not([aria-disabled]), .choice-option.is-highlighted) { background: var(--light-hover); border-color: var(--light-line); }
+[data-theme="light"] .choice-option[aria-selected="true"] { background: #dcdcd8; border-color: #7a7a75; color: var(--light-ink); }
+[data-theme="light"] :is(.beat-search button, .batch-selection-actions button, .publish-search-results button,
+  .youtube-stats-list button, .caption-preview p, .stats-notice svg) { color: var(--light-ink); }
+[data-theme="light"] :is(.beat-search button:hover, .batch-selection-actions button:not(:disabled):hover) { background: var(--light-hover); border-color: var(--light-line); }
+
+[data-theme="light"] :is(.publish-mode, .publish-mode.stats-platform-switch, .publication-grid .platform-icon, .platform-icon,
+  .panel-title > span, .channel-avatar, .stats-row-cover, .overview-symbol) { background: var(--light-raised); border-color: var(--light-line); color: var(--light-ink); }
+[data-theme="light"] .publish-mode::before,
+[data-theme="light"] .view-history-period button[aria-pressed="true"] { background: #292929; color: #fff; box-shadow: none; }
+[data-theme="light"] :is(.publish-mode button, .view-history-period button, .detail-tabs button):not(.is-active, [aria-pressed="true"]) { color: var(--light-muted); }
+[data-theme="light"] :is(.publish-mode button.is-active, .view-history-period button[aria-pressed="true"]) { color: #fff; }
+[data-theme="light"] .detail-tabs button.is-active { color: var(--light-ink); }
+[data-theme="light"] .detail-tabs button::after { background: var(--light-ink); }
+[data-theme="light"] :is(.history-row, .stats-metric-card, .stats-notice, .caption-preview) { background: #f0f0ed; border-color: var(--light-line); }
+[data-theme="light"] :is(.youtube-stats-list, .publish-search-results, .import-track-list label) { background: var(--light-white); border-color: var(--light-line); }
+[data-theme="light"] :is(.import-track-list input, .youtube-upload-progress progress, .audio-dock input[type="range"]) { accent-color: #303030; }
+[data-theme="light"] .view-history-chart span { background: linear-gradient(#60605b, #343431); }
+[data-theme="light"] .history-row[data-focused] { border-color: var(--light-control-line); }
+
+[data-theme="light"] .audio-dock { color: var(--light-ink); }
+[data-theme="light"] :is(.audio-dock-track span, .audio-dock time) { color: var(--light-muted); }
+[data-theme="light"] .audio-dock button:not(.player-play) { color: var(--light-ink); }
+[data-theme="light"] .audio-dock button:is(:hover, [aria-pressed="true"]):not(.player-play) { border-color: var(--light-line); background: var(--light-hover); }
+[data-theme="light"] .audio-dock .player-play { color: #fff; background: #252525; border-color: #252525; }
+[data-theme="light"] .audio-dock-progress input::-webkit-slider-thumb { background: var(--light-ink); }
+[data-theme="light"] .audio-dock-progress input::-moz-range-thumb { background: var(--light-ink); }
+[data-theme="light"] .toast { color: #fff; background: #292929; box-shadow: var(--light-shadow); }
+
+[data-theme="light"] .splash-screen { background: linear-gradient(180deg, #f8f8f6, #e8e8e4); }
+[data-theme="light"] :is(.splash-frame, .splash-corner) { border-color: var(--light-line); }
+[data-theme="light"] .splash-tagline { color: var(--light-ink); }
+[data-theme="light"] .splash-wave { stroke: #24242035; }
+[data-theme="light"] .splash-horizon { background: linear-gradient(90deg, transparent, #28282430, transparent); }
+[data-theme="light"] .splash-emblem img { filter: drop-shadow(0 16px 28px #29292538); }
+[data-theme="light"] .splash-progress { background: var(--light-line); }
+[data-theme="light"] .splash-progress-fill { background: #42423e; }

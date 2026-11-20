@@ -852,3 +852,7 @@ input, textarea { caret-color: #fff; }
 .channel-suggestions { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .channel-suggestions small { color: #b8b8b8; font-size: 12px; }
 @media(max-width: 380px) { .channel-row { flex-wrap: wrap; } .publish-search-results button small:empty { display: none; } }
+
+.theme-panel { max-width: 440px; margin-bottom: 16px; gap: 8px; }
+.theme-panel .section-intro, .theme-switch { margin: 0; }
+.theme-switch button { display: flex; align-items: center; justify-content: center; gap: 8px; }
