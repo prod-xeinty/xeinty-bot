@@ -139,7 +139,7 @@ export function loadTelegramChannelProfile(initData: string, channel: string) {
 }
 
 export type StatsPlatform = 'youtube' | 'telegram'
-export type PostMetrics = { views: number | null; likes?: number | null; reactions?: number | null; comments?: number | null; forwards?: number | null; saves?: number | null }
+export type PostMetrics = { views: number | null; likes?: number | null; reactions?: number | null; comments?: number | null; forwards?: number | null }
 export type PlatformStats = {
   entries: (PostMetrics & { beatId: string; link: string; restricted?: boolean; mediaKey?: string | null; channel?: string; visibility?: string })[]
   totals: PostMetrics
