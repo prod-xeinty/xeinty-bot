@@ -31,7 +31,7 @@ export function rememberPublication<T extends PublicationSource>(beat: T, platfo
   return { ...beat, ...latest, publications: [publication, ...posts.filter((post) => post !== existing)] }
 }
 
-function postUrl(value: string, platform: StatsPlatform) {
+export function postUrl(value: string, platform: StatsPlatform) {
   try {
     const url = new URL(value.trim())
     if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || url.port || url.href.length > 1000) return null

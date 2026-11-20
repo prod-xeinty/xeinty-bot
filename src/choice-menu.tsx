@@ -5,6 +5,23 @@ import { canonicalKeyOptions, normalizeMusicKey } from './music-key'
 
 type Option = { value: string; label: string; disabled?: boolean; group?: string }
 
+export function positionAnchoredMenu(rect: DOMRect, minWidth = 176, preferredHeight = 178) {
+  const viewport = window.visualViewport
+  const top = viewport?.offsetTop ?? 0
+  const bottom = top + (viewport?.height ?? window.innerHeight)
+  const leftEdge = viewport?.offsetLeft ?? 0
+  const rightEdge = leftEdge + (viewport?.width ?? window.innerWidth)
+  const roomBelow = bottom - rect.bottom - 14
+  const roomAbove = rect.top - top - 14
+  const above = roomBelow < preferredHeight && roomAbove > roomBelow
+  const width = Math.min(Math.max(rect.width, minWidth), rightEdge - leftEdge - 24)
+  return {
+    left: Math.min(Math.max(rect.left, leftEdge + 12), rightEdge - width - 12),
+    width, y: above ? window.innerHeight - rect.top + 7 : rect.bottom + 7,
+    available: Math.max(40, Math.min(286, above ? roomAbove : roomBelow)), above,
+  }
+}
+
 function ChoiceMenu({ label, value, options, onChange, children, empty, disabled = false }: {
   label: string
   value: string
@@ -35,21 +52,7 @@ function ChoiceMenu({ label, value, options, onChange, children, empty, disabled
     if (!expanded) return
     function align() {
       if (!anchor.current) return
-      const rect = anchor.current.getBoundingClientRect()
-      const viewport = window.visualViewport
-      const top = viewport?.offsetTop ?? 0
-      const bottom = top + (viewport?.height ?? window.innerHeight)
-      const leftEdge = viewport?.offsetLeft ?? 0
-      const rightEdge = leftEdge + (viewport?.width ?? window.innerWidth)
-      const roomBelow = bottom - rect.bottom - 14
-      const roomAbove = rect.top - top - 14
-      const above = roomBelow < 178 && roomAbove > roomBelow
-      const width = Math.min(Math.max(rect.width, 176), rightEdge - leftEdge - 24)
-      setPosition({
-        left: Math.min(Math.max(rect.left, leftEdge + 12), rightEdge - width - 12),
-        width, y: above ? window.innerHeight - rect.top + 7 : rect.bottom + 7,
-        available: Math.max(40, Math.min(286, above ? roomAbove : roomBelow)), above,
-      })
+      setPosition(positionAnchoredMenu(anchor.current.getBoundingClientRect()))
     }
     align()
     window.addEventListener('resize', align)
