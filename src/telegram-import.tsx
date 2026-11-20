@@ -4,6 +4,7 @@ import { Dropdown } from './choice-menu'
 import { previewTelegramImport, saveTelegramImport, type TelegramChannel, type TelegramImportPreview, type TelegramImportSuggestion, type TelegramImportTrack } from './cloud-beats'
 
 const dateFormat = new Intl.DateTimeFormat('ru-RU', { dateStyle: 'medium' })
+const saveBatchSize = 100
 
 export function TelegramImport({ initData, channels, initialSuggestion, openChannels, openLibrary, onSaved }: {
   initData?: string; channels: TelegramChannel[]; initialSuggestion?: TelegramImportSuggestion; openChannels: () => void; openLibrary: () => void; onSaved: () => void
@@ -16,16 +17,25 @@ export function TelegramImport({ initData, channels, initialSuggestion, openChan
   const [selected, setSelected] = useState<number[]>([])
   const [busy, setBusy] = useState<'read' | 'save'>()
   const [error, setError] = useState('')
+  const [saveFailed, setSaveFailed] = useState(false)
+  const [saveTotal, setSaveTotal] = useState(0)
   const [outcome, setOutcome] = useState<{ added: number; skipped: number }>()
   const channel = channels.find((item) => item.id === preferredChannel)?.id ?? channels[0]?.id ?? ''
 
-  function reset() { setError(''); setResult(undefined); setSelected([]); setOutcome(undefined) }
+  function reset() {
+    setError('')
+    setSaveFailed(false)
+    setResult(undefined)
+    setSelected([])
+    setOutcome(undefined)
+  }
 
   async function scan(cursor?: number) {
     if (!initData || !channel || busy) return
     if (cursor === undefined) reset()
     setBusy('read')
     setError('')
+    setSaveFailed(false)
     try {
       const firstLink = first.trim()
       const lastLink = last.trim() || firstLink
@@ -44,24 +54,29 @@ export function TelegramImport({ initData, channels, initialSuggestion, openChan
     if (!initData || !channel || busy || !selected.length) return
     setBusy('save')
     setError('')
-    let added = 0
-    let skipped = 0
+    setSaveFailed(false)
+    setSaveTotal(selected.length)
+    let processed = 0
     try {
-      for (let i = 0; i < selected.length; i += 100) {
-        const ids = selected.slice(i, i + 100)
+      for (let i = 0; i < selected.length; i += saveBatchSize) {
+        const ids = selected.slice(i, i + saveBatchSize)
         const counts = await saveTelegramImport(initData, channel, ids)
-        added += counts.added
-        skipped += counts.skipped
-        setSelected((previous) => previous.filter((id) => !ids.includes(id)))
+        processed += ids.length
+        const processedIds = new Set(ids)
         const savedIds = new Set(counts.savedIds)
+        setOutcome((previous) => ({
+          added: (previous?.added ?? 0) + counts.added,
+          skipped: (previous?.skipped ?? 0) + counts.skipped,
+        }))
+        setSelected((previous) => previous.filter((id) => !processedIds.has(id)))
         setResult((previous) => previous && { ...previous, tracks: previous.tracks.flatMap((track) =>
-          !ids.includes(track.id) ? [track] : savedIds.has(track.id) ? [{ ...track, exists: true }] : []) })
+          !processedIds.has(track.id) ? [track] : savedIds.has(track.id) ? [{ ...track, exists: true }] : []) })
       }
     } catch (failure) {
+      setSaveFailed(true)
       setError(failure instanceof Error ? failure.message : 'Не удалось завершить импорт.')
     } finally {
-      if (added || skipped) setOutcome((previous) => ({ added: (previous?.added ?? 0) + added, skipped: (previous?.skipped ?? 0) + skipped }))
-      if (added || skipped) onSaved()
+      if (processed > 0) onSaved()
       setBusy(undefined)
     }
   }
@@ -117,12 +132,18 @@ export function TelegramImport({ initData, channels, initialSuggestion, openChan
           {result.next !== null && <button type="button" className="outline-button" disabled={Boolean(busy)} onClick={() => void scan(result.next ?? undefined)}>
             {busy === "read" ? "Продолжаем поиск…" : "Продолжить поиск"}
           </button>}
-          {selected.length > 0 && <button type="button" className="primary-button" disabled={Boolean(busy)} onClick={() => void save()}>
-            {busy === "save" ? "Добавляем…" : "Добавить в библиотеку · " + selected.length} <ArrowRight size={16} />
+          {busy !== 'save' && selected.length > 0 && <button type="button" className="primary-button" disabled={Boolean(busy)} onClick={() => void save()}>
+            {saveFailed ? 'Повторить импорт' : 'Добавить в библиотеку'} · {selected.length} <ArrowRight size={16} />
           </button>}
         </div>
+        {busy === 'save' && <div className="youtube-upload-progress">
+          <progress aria-label="Прогресс импорта" value={saveTotal - selected.length} max={saveTotal} />
+          <span role="status">Обработано {saveTotal - selected.length} из {saveTotal}</span>
+        </div>}
       </section>}
-      {error && <p className="video-error" role="alert">{error}</p>}
+      {(error || saveFailed) && <p className="video-error" role="alert">
+        {error}{saveFailed && selected.length > 0 && <> Осталось импортировать: {selected.length}.</>}
+      </p>}
       {outcome && <div className="import-actions"><p className="form-hint" role="status">Добавлено: {outcome.added}{outcome.skipped ? " · Пропущено: " + outcome.skipped : ""}</p>
         <button type="button" className="outline-button" disabled={Boolean(busy)} onClick={openLibrary}>Открыть библиотеку <ArrowRight size={16} /></button>
       </div>}
