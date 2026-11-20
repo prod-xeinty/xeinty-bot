@@ -108,6 +108,8 @@ export function PublicationHistory({ beat, channels, stats, save, openPublicatio
       const counters = [
         [telegram ? 'Просмотры поста' : 'Просмотры', metrics?.views],
         [telegram ? 'Реакции' : 'Лайки', telegram ? metrics?.reactions : metrics?.likes],
+        ['Комментарии', metrics?.comments],
+        ['Пересылки', telegram ? metrics?.forwards : undefined],
       ].flatMap(([label, value]) => typeof value === 'number' ? [{label, value}] : [])
       return <li key={post.platform + ':' + post.url} className="history-row"
         data-focused={post.url === focusedUrl ? true : undefined} ref={post.url === focusedUrl ? focused : undefined}>
