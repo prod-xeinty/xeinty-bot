@@ -25,7 +25,7 @@
 [data-theme="light"] :is(button, input, textarea, a, summary):focus-visible { outline-color: var(--light-ink); }
 [data-theme="light"] :is(input, textarea) { caret-color: var(--light-ink); }
 [data-theme="light"] :is(.youtube-release-options input[type="datetime-local"], .schedule-editor .field input) { color-scheme: light; }
-[data-theme="light"] :is(.topbar, .desktop-rail, .rail-footer, .beat-list, .beat-row, .detail-tabs,
+[data-theme="light"] :is(.topbar, .desktop-rail, .rail-footer, .beat-list, .beat-entry, .detail-tabs,
   .data-card--editable .field, .delete-beat, .publication-link, .import-results, .stats-metric-card,
   .youtube-stats-list, .youtube-stats-list li + li, .view-history, .view-history-period, .view-history-chart,
   .history-row, .history-schedule, .channel-row, .batch-import, .batch-selection-list li) { border-color: var(--light-line); }
@@ -123,3 +123,8 @@
 [data-theme="light"] .splash-emblem img { filter: drop-shadow(0 16px 28px #29292538); }
 [data-theme="light"] .splash-progress { background: var(--light-line); }
 [data-theme="light"] .splash-progress-fill { background: #42423e; }
+
+[data-theme="light"] .record-menu-trigger { color: var(--light-ink); }
+[data-theme="light"] .record-menu-trigger:is(:hover, [aria-expanded="true"]),
+[data-theme="light"] .record-menu [role="menuitem"]:is(:hover, :focus-visible):not(:disabled) { background: var(--light-hover); border-color: var(--light-control-line); }
+[data-theme="light"] .record-menu [role="menuitem"].record-menu-danger { color: #94261f; }

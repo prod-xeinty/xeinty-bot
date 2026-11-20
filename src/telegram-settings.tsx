@@ -50,14 +50,13 @@ function TelegramChannelIdentity({ initData, channel }: { initData?: string; cha
   return <ChannelIdentity title={channel.title} address={username ? '@' + username : channel.id} profile={profile} loading={loading} />
 }
 
-export function TelegramChannels({ available, initData, channels, loadError, onConnect, onDisconnect, openImport }: {
+export function TelegramChannels({ available, initData, channels, loadError, onConnect, onDisconnect }: {
   available: boolean
   initData?: string
   channels: TelegramChannel[]
   loadError: string
   onConnect: (address: string) => Promise<void>
   onDisconnect: (id: string) => Promise<void>
-  openImport: () => void
 }) {
   const [address, setAddress] = useState('')
   const [busy, setBusy] = useState(false)
@@ -93,7 +92,6 @@ export function TelegramChannels({ available, initData, channels, loadError, onC
         <TelegramChannelIdentity initData={initData} channel={channel} />
         <button type="button" className="outline-button" disabled={busy} onClick={() => void change(() => onDisconnect(channel.id))}>Отключить</button>
       </li>)}</ul>
-      {channels.length > 0 && <button type="button" className="outline-button channel-import" onClick={openImport}>Импортировать из Telegram</button>}
     </>}
   </ChannelPanel>
 }
