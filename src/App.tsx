@@ -139,7 +139,7 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
   const playingTrack = beats.find((beat) => beat.id === audioPlayer.trackId && beat.audioUrl)
 
   function sourcePostLink(url: string) {
-    return <a className="outline-button source-post-link" href={url} target="_blank" rel="noreferrer"
+    return <a className="player-next" href={url} target="_blank" rel="noreferrer"
       onClick={(event) => { if (webApp?.openTelegramLink) { event.preventDefault(); webApp.openTelegramLink(url) } }}>
       <ExternalLink size={16} /> Открыть в Telegram
     </a>

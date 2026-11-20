@@ -67,10 +67,10 @@
 
 [data-theme="light"] :is(.primary-button, .startup-error button) { color: #fff; background: #252525; border-color: #252525; }
 [data-theme="light"] .primary-button:hover { background: #3b3b3b; }
-[data-theme="light"] :is(.outline-button:not(.source-post-link), .video-download, .delete-beat button, .copy-button) {
+[data-theme="light"] :is(.outline-button, .video-download, .delete-beat button, .copy-button) {
   color: var(--light-ink); border-color: var(--light-control-line); background: var(--light-panel);
 }
-[data-theme="light"] :is(.outline-button:not(.source-post-link), .video-download, .delete-beat button, .copy-button):hover:not(:disabled) { background: var(--light-raised); }
+[data-theme="light"] :is(.outline-button, .video-download, .delete-beat button, .copy-button):hover:not(:disabled) { background: var(--light-raised); }
 [data-theme="light"] .outline-button:disabled { opacity: .55; }
 [data-theme="light"] :is(.video-error, .delete-beat .delete-beat-confirm) { color: #94261f; }
 [data-theme="light"] .delete-beat .delete-beat-confirm { border-color: #a6433e; }

@@ -103,7 +103,7 @@ input, textarea { caret-color: #fff; }
 .player-play, .player-publish { width: 42px; height: 42px; flex: none; display: grid; place-items: center; border: 1px solid #eeeeee; border-radius: 15px; color: #fff; background: linear-gradient(145deg, #272727, #000); box-shadow: inset 0 1px 0 #555, 0 4px 8px #0005; transition: filter var(--dur-control) var(--ease-press), transform var(--dur-control) var(--ease-press), box-shadow var(--dur-control) var(--ease-press); animation: item-enter 260ms var(--ease-enter) 75ms both; }
 .player-publish { width: auto; min-width: 84px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 10px; color: #242424; background: linear-gradient(145deg, #fff, #bcbcbc); box-shadow: inset 0 1px 0 #fff, 0 2px 5px #0002; font-size: 11px; font-weight: 700; white-space: nowrap; }
 .player-play:active, .player-publish:active { transform: scale(.96); }
-.player-next { height: 42px; display: inline-flex; align-items: center; gap: 8px; padding: 0 17px; border: 1px solid #505050; border-radius: 15px; color: #fff; background: linear-gradient(150deg, #343434, #000 72%); box-shadow: inset 0 1px 0 #777, 0 4px 8px #0005; white-space: nowrap; font-size: 12px; font-weight: 700; transition: background var(--dur-control) var(--ease-press), filter var(--dur-control) var(--ease-press), transform var(--dur-control) var(--ease-press); animation: item-enter 260ms var(--ease-enter) 105ms both; }
+.player-next { height: 42px; display: inline-flex; align-items: center; gap: 8px; padding: 0 17px; border: 1px solid #505050; border-radius: 15px; color: #fff; text-decoration: none; background: linear-gradient(150deg, #343434, #000 72%); box-shadow: inset 0 1px 0 #777, 0 4px 8px #0005; white-space: nowrap; font-size: 12px; font-weight: 700; transition: background var(--dur-control) var(--ease-press), filter var(--dur-control) var(--ease-press), transform var(--dur-control) var(--ease-press); animation: item-enter 260ms var(--ease-enter) 105ms both; }
 .player-next svg, .primary-button svg, .outline-button svg, .copy-button svg:last-child, .back-link svg, .upload-banner-arrow svg { transition: transform var(--dur-control) var(--ease-press); }
 .player-next:hover { background: #383838; }
 .player-next:active, .primary-button:active, .outline-button:active, .copy-button:active, .upload-banner:active, .tool-grid button:active, .video-download:active, .delete-beat button:active { transform: scale(.975); }
@@ -843,8 +843,6 @@ input, textarea { caret-color: #fff; }
 .publish-search-results button small { color: #b8b8b8; }
 .publish-search-results button svg { flex: none; }
 .library-add { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
-.source-post-link { flex-shrink: 0; border-color: #353535; background: #1c1c1c; color: #f9f9f9; text-decoration: none; }
-.source-post-link:hover { border-color: #4a4a4a; background: #333; }
 .player-controls { flex-wrap: wrap; }
 .channel-panel { display: grid; gap: 12px; max-width: 650px; margin: 16px 0; }
 .channel-panel .section-intro, .channel-panel p { margin: 0; }
