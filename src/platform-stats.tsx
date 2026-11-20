@@ -2,7 +2,7 @@ import { useEffect, useState, type CSSProperties } from 'react'
 import { ChevronRight, Music2 } from 'lucide-react'
 import { BeatSearch, matchBeats } from './beat-library'
 import { Dropdown } from './choice-menu'
-import { loadPlatformStats, type PlatformStats, type PostMetrics, type StatsPlatform } from './cloud-beats'
+import { loadPlatformStats, type PlatformStats, type StatsPlatform } from './cloud-beats'
 import { getBeatPublications } from './publication-history'
 import type { StoredBeat } from './beat-store'
 
@@ -39,7 +39,7 @@ export function usePlatformStats(platform: StatsPlatform, initData?: string, act
 type StatsState = ReturnType<typeof usePlatformStats>
 type LinkedBeat = Pick<StoredBeat, 'id' | 'title' | 'bpm' | 'key' | 'tags' | 'audioName' | 'youtubeLink' | 'youtubePublishAt' | 'telegramLink' | 'publications'> & { cloud?: boolean; coverUrl?: string }
 const platformNames = { youtube: 'YouTube', telegram: 'Telegram' }
-const metricLabels = { views: 'Просмотры', likes: 'Лайки', reactions: 'Реакции', comments: 'Комментарии', forwards: 'Пересылки', saves: 'Сохранения' }
+const metricLabels = { views: 'Просмотры', likes: 'Лайки', reactions: 'Реакции', comments: 'Комментарии', forwards: 'Пересылки' }
 const rankingMetrics = {
   youtube: ['views', 'likes', 'comments'],
   telegram: ['views', 'reactions', 'comments', 'forwards'],
@@ -91,14 +91,14 @@ function ViewsHistory({ stats }: { stats?: PlatformStats }) {
   </section>
 }
 
-function MetricCards({ platform, metrics }: { platform: StatsPlatform; metrics?: PostMetrics }) {
-  return <dl className="stats-metric-grid">{[...rankingMetrics[platform], 'saves' as const].map((key) => {
-    const value = metrics?.[key]
-    return <div key={key} className="stats-metric-card">
+function MetricCards({ metrics }: { metrics: { key: RankingMetric; value: number }[] }) {
+  if (!metrics.length) return null
+  return <dl className="stats-metric-grid">{metrics.map(({ key, value }) => (
+    <div key={key} className="stats-metric-card">
       <dt>{metricLabels[key]}</dt>
-      <dd>{typeof value === 'number' ? numberFormat.format(value) : <span aria-label="Нет данных">—</span>}</dd>
+      <dd>{numberFormat.format(value)}</dd>
     </div>
-  })}</dl>
+  ))}</dl>
 }
 
 function StatsControls({ state, openChannels }: { state: StatsState; openChannels: () => void }) {
@@ -124,10 +124,15 @@ export function StatsOverview({ platform, setPlatform, beats, state, ranking, se
     beat, links: new Set(getBeatPublications(beat).filter((post) => post.platform === platform).map((post) => post.url)),
   })).filter(({ links }) => links.size > 0)
   const result = state.stats
-  const metric = ranking.metrics[platform]
-  const options = rankingMetrics[platform].map((value) => ({ value, label: metricLabels[value] }))
+  const metrics = rankingMetrics[platform].flatMap((key) => {
+    const value = result?.totals[key]
+    return typeof value === 'number' ? [{ key, value }] : []
+  })
+  const options = metrics.map(({ key }) => ({ value: key, label: metricLabels[key] }))
+  const preferredMetric = ranking.metrics[platform]
+  const metric = options.some(({ value }) => value === preferredMetric) ? preferredMetric : options[0]?.value
   const matches = new Set(matchBeats(linked.map(({ beat }) => beat), ranking.query).map((beat) => beat.id))
-  const rows = rankBeats(linked.filter(({ beat }) => matches.has(beat.id)), result, metric)
+  const rows = metric ? rankBeats(linked.filter(({ beat }) => matches.has(beat.id)), result, metric) : []
   return <section className="overview-hero youtube-stats" aria-label="Сводка по площадкам">
     <div className="publish-mode stats-platform-switch" role="group" aria-label="Площадка"
       style={{ '--tab-i': platform === 'youtube' ? 0 : 1 } as CSSProperties}>
@@ -138,16 +143,16 @@ export function StatsOverview({ platform, setPlatform, beats, state, ranking, se
       <p>Опубликуй бит или добавь ссылку {platformNames[platform]} в его карточке.</p>
       <button type="button" className="outline-button" onClick={openPublication}>К публикации</button>
     </> : <>
-      <MetricCards platform={platform} metrics={result?.totals} />
+      <MetricCards metrics={metrics} />
+      {result && !metrics.length && <p className="form-hint">Статистика по этим публикациям пока недоступна.</p>}
       <div className="stats-coverage" role="status">
-        {result && <span>Просмотры получены {platform === 'youtube' ? 'по видео' : 'по постам'} · {result.videosWithViews} из {result.linkedVideos}</span>}
+        {result && typeof result.totals.views === 'number' && <span>Просмотры получены {platform === 'youtube' ? 'по видео' : 'по постам'} · {result.videosWithViews} из {result.linkedVideos}</span>}
         {result?.unsupported && <span>Некоторые ссылки ведут не на посты Telegram или указаны в неподдерживаемом формате.</span>}
         {result?.restricted && <span>Для статистики закрытого канала подключи его во вкладке «Каналы» и проверь права администратора.</span>}
-        <span>Прочерк означает, что данных нет. Счётчик сохранений пока недоступен.</span>
       </div>
       <StatsControls state={state} openChannels={openChannels} />
-      <ViewsHistory stats={result} />
-      <section className="stats-ranking" aria-label="Рейтинг битов">
+      {result && (typeof result.totals.views === 'number' || Boolean(result.series?.length)) && <ViewsHistory stats={result} />}
+      {metric && <section className="stats-ranking" aria-label="Рейтинг битов">
         <div className="stats-list-heading"><h2>По битам</h2><span role="status">{rows.length} из {linked.length}</span></div>
         <div className="stats-ranking-controls">
           <BeatSearch label="Поиск бита в статистике" value={ranking.query} onChange={(query) => setRanking({ ...ranking, query })} />
@@ -167,7 +172,7 @@ export function StatsOverview({ platform, setPlatform, beats, state, ranking, se
               <ChevronRight className="stats-row-arrow" size={16} aria-hidden="true" />
             </button>
           </li>)}</ul>}
-      </section>
+      </section>}
     </>}
   </section>
 }
