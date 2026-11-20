@@ -30,13 +30,24 @@ function searchText(value: string) {
     .replace(/(\d)\s*bpm\b/g, '$1 bpm').replace(/[_.·,]+/g, ' ').trim()
 }
 
+const explicitTempo = /(?<![\p{L}\p{N}])(?<!\d[.,])(\d{1,3})\s*(?:bpm|бпм)(?![\p{L}\p{N}])/iu
+
 export function matchBeats<T extends SearchableBeat>(beats: T[], query: string): T[] {
-  const text = searchText(query)
-  if (!text) return beats
-  const terms = text.split(/\s+/)
-  const key = normalizeMusicKey(query)
+  const normalizedQuery = query.normalize('NFKC')
+  const tempoMatch = normalizedQuery.match(explicitTempo)
+  const tempo = tempoMatch ? Number(tempoMatch[1]) : undefined
+  const remainder = normalizedQuery.replace(explicitTempo, ' ')
+  const text = searchText(remainder)
+  if (tempo === undefined && !text) return beats
+
+  const terms = text ? text.split(/\s+/) : []
+  const key = normalizeMusicKey(remainder)
   return beats.filter((beat) => {
-    if (key && normalizeMusicKey(beat.key) === key) return true
+    if (tempo !== undefined && (!beat.bpm.trim() || Number(beat.bpm) !== tempo)) return false
+    if (key) {
+      const matchingKey = normalizeMusicKey(beat.key) === key
+      if (tempo !== undefined || matchingKey) return matchingKey
+    }
     const searchable = searchText([beat.title, beat.audioName, beat.tags, beat.key, beat.bpm + ' bpm'].filter(Boolean).join(' '))
     return terms.every((term) => searchable.includes(term))
   })
