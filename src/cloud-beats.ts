@@ -48,7 +48,13 @@ export async function loadCloudBeats(initData: string, signal?: AbortSignal, cur
   return { beats: result.beats.map((beat) => ({ ...beat, cloud: true as const })), next: result.next ?? null }
 }
 
-export type TelegramImportTrack = { id: number; name: string; title: string; date: string; url: string; group: string | null; exists: boolean }
+export type TelegramImportSuggestion = { channel: string; first: string; last: string; count: number }
+
+export function loadTelegramImportSuggestions(initData: string, signal?: AbortSignal) {
+  return call<{ suggestions: TelegramImportSuggestion[] }>(initData, 'telegram-import-suggestions', {}, signal)
+}
+
+export type TelegramImportTrack = { id: number; name: string; title: string; date: string; url: string; group: string | null; exists: boolean; bpm?: string; key?: string }
 export type TelegramImportPreview = { tracks: TelegramImportTrack[]; next: number | null; scanned: number; total: number }
 
 export function previewTelegramImport(initData: string, channel: string, first: string, last: string, cursor?: number) {

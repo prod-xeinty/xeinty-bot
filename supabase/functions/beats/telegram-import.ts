@@ -1,8 +1,9 @@
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2'
 import { Api } from 'npm:telegram@2.26.22'
 import bigInteger from 'npm:big-integer@1.6.52'
-import { channelForPublisher, TelegramPublishError } from './telegram-publish.ts'
+import { channelForReader, TelegramPublishError } from './telegram-publish.ts'
 import { getBot } from './telegram-stats.ts'
+import { detectTelegramAudioMetadata } from './audio-metadata.ts'
 
 const lastMessageId = 2_147_483_647
 const pageSize = 100
@@ -17,7 +18,7 @@ export function parseChannelPost(value: unknown) {
   return { channel: match[1] ?? match[2].toLowerCase(), id: Number(match[3]) }
 }
 
-type AudioPost = { id: number; name: string; title: string; date: string; url: string; group: string | null }
+type AudioPost = { id: number; name: string; title: string; bpm: string; key: string; date: string; url: string; group: string | null }
 type Result = { data: object; status?: number }
 const fail = (error: string, status = 400): Result => ({ data: { error }, status })
 
@@ -28,9 +29,11 @@ function describe(post: Api.Message, base: string): AudioPost | null {
   const filename = file.attributes.find((item) => item instanceof Api.DocumentAttributeFilename)
   const name = filename instanceof Api.DocumentAttributeFilename ? filename.fileName.trim().slice(0, 255) : ''
   if (audio instanceof Api.DocumentAttributeAudio && audio.voice) return null
-  if (!file.mimeType.startsWith('audio/') && !/\.(mp3|wav|flac|m4a|ogg|aiff?)$/i.test(name)) return null
-  const title = (audio instanceof Api.DocumentAttributeAudio ? audio.title?.trim() : '') || name.replace(/\.[^.]+$/, '') || 'Аудио ' + post.id
-  return { id: post.id, name, title: title.slice(0, 120), date: new Date(post.date * 1000).toISOString(),
+  if (!file.mimeType.startsWith('audio/') && !/\.(mp3|wav|flac|m4a|ogg|aac|aiff?|opus)$/i.test(name)) return null
+  const audioTitle = audio instanceof Api.DocumentAttributeAudio ? audio.title?.trim() : undefined
+  const title = audioTitle || name.replace(/\.[^.]+$/, '').trim() || 'Аудио ' + post.id
+  const metadata = detectTelegramAudioMetadata(name, audioTitle, post.message)
+  return { id: post.id, name, title: title.slice(0, 120), ...metadata, date: new Date(post.date * 1000).toISOString(),
     url: base + '/' + post.id, group: post.groupedId?.toString() ?? null }
 }
 
@@ -49,7 +52,7 @@ export async function telegramImport(db: SupabaseClient, userId: number, body: R
   if (error) throw error
   if (!owned) return fail('Сначала подключи этот канал в XEINTY.', 403)
   let chat
-  try { chat = await channelForPublisher(channel, userId) }
+  try { chat = await channelForReader(channel, userId) }
   catch (failure) {
     return fail(failure instanceof TelegramPublishError ? failure.message : 'Не удалось проверить доступ к каналу.', 403)
   }
@@ -129,7 +132,8 @@ export async function telegramImport(db: SupabaseClient, userId: number, body: R
   const savedIds = tracks.map(({ id }) => id)
   if (!candidates.length) return { data: { added: 0, skipped: new Set(selection as number[]).size, savedIds } }
   const { data: added, error: insertError } = await db.from('beats').upsert(candidates.map((post) => ({
-    id: crypto.randomUUID(), telegram_user_id: userId, title: post.title, audio_name: post.name || null, status: 'Импортирован',
+    id: crypto.randomUUID(), telegram_user_id: userId, title: post.title, audio_name: post.name || null,
+    bpm: post.bpm, musical_key: post.key, status: 'Импортирован',
     telegram_source_chat_id: channel, telegram_source_message_id: post.id, telegram_source_url: post.url,
     telegram_source_date: post.date, telegram_link: post.url,
   })), { onConflict: 'telegram_user_id,telegram_source_chat_id,telegram_source_message_id', ignoreDuplicates: true }).select('id')

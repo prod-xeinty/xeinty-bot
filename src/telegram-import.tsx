@@ -1,16 +1,16 @@
 import { useState, type FormEvent } from 'react'
 import { ArrowRight, FileAudio2, ListFilter } from 'lucide-react'
 import { Dropdown } from './choice-menu'
-import { previewTelegramImport, saveTelegramImport, type TelegramChannel, type TelegramImportPreview, type TelegramImportTrack } from './cloud-beats'
+import { previewTelegramImport, saveTelegramImport, type TelegramChannel, type TelegramImportPreview, type TelegramImportSuggestion, type TelegramImportTrack } from './cloud-beats'
 
 const dateFormat = new Intl.DateTimeFormat('ru-RU', { dateStyle: 'medium' })
 
-export function TelegramImport({ initData, channels, openChannels, openLibrary, onSaved }: {
-  initData?: string; channels: TelegramChannel[]; openChannels: () => void; openLibrary: () => void; onSaved: () => void
+export function TelegramImport({ initData, channels, initialSuggestion, openChannels, openLibrary, onSaved }: {
+  initData?: string; channels: TelegramChannel[]; initialSuggestion?: TelegramImportSuggestion; openChannels: () => void; openLibrary: () => void; onSaved: () => void
 }) {
-  const [preferredChannel, setPreferredChannel] = useState('')
-  const [first, setFirst] = useState('')
-  const [last, setLast] = useState('')
+  const [preferredChannel, setPreferredChannel] = useState(initialSuggestion?.channel ?? '')
+  const [first, setFirst] = useState(initialSuggestion?.first ?? '')
+  const [last, setLast] = useState(initialSuggestion?.last ?? '')
   const [result, setResult] = useState<TelegramImportPreview>()
   const [selected, setSelected] = useState<number[]>([])
   const [busy, setBusy] = useState<'read' | 'save'>()
@@ -115,6 +115,6 @@ function ImportTrack({ track, checked, busy, toggle }: { track: TelegramImportTr
   return <li><label>
     <input type="checkbox" checked={checked || track.exists} disabled={busy || track.exists} onChange={(event) => toggle(event.currentTarget.checked)} />
     <FileAudio2 size={17} aria-hidden="true" />
-    <span><strong>{track.title}</strong><small>{dateFormat.format(Date.parse(track.date))}{track.group ? " · Пачка" : ""}{track.exists ? " · Уже в библиотеке" : ""}</small></span>
+    <span><strong>{track.title}</strong><small>{dateFormat.format(Date.parse(track.date))}{track.bpm && track.bpm !== "—" ? " · " + track.bpm + " BPM" : ""}{track.key && track.key !== "—" ? " · " + track.key : ""}{track.group ? " · Пачка" : ""}{track.exists ? " · Уже в библиотеке" : ""}</small></span>
   </label></li>
 }

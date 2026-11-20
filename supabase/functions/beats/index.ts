@@ -1,7 +1,8 @@
 import { telegramPublication } from './telegram-attempts.ts'
+import { telegramImportSuggestions, telegramWebhook } from './telegram-updates.ts'
 // Deploy with verify_jwt = false: Telegram initData is verified below on every request.
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { channelForPublisher, telegramChannelProfile, TelegramPublishError } from './telegram-publish.ts'
+import { channelForReader, telegramChannelProfile, TelegramPublishError } from './telegram-publish.ts'
 
 import { youtubeAction, youtubeCallback } from './youtube.ts'
 
@@ -124,7 +125,9 @@ function client() {
 }
 
 Deno.serve(async (request) => {
-  if (request.method === 'GET' && new URL(request.url).pathname.endsWith('/beats/youtube/callback')) {
+  const pathname = new URL(request.url).pathname
+  if (pathname.endsWith('/beats/telegram-webhook')) return telegramWebhook(request, client)
+  if (request.method === 'GET' && pathname.endsWith('/beats/youtube/callback')) {
     return youtubeCallback(client(), request)
   }
   const origin = originFor(request)
@@ -182,6 +185,8 @@ Deno.serve(async (request) => {
       return reply({ beats, next: last ? { id: last.id, createdAt: last.created_at } : null }, 200, origin)
     }
 
+    if (action === 'telegram-import-suggestions') return reply(await telegramImportSuggestions(db, userId), 200, origin)
+
     if (action === 'telegram-import-preview' || action === 'telegram-import-save') {
       const { telegramImport } = await import('./telegram-import.ts')
       const result = await telegramImport(db, userId, body)
@@ -227,7 +232,7 @@ Deno.serve(async (request) => {
         if (error) throw error
         return reply({ ok: true }, 200, origin)
       }
-      const chat = await channelForPublisher(address, userId)
+      const chat = await channelForReader(address, userId)
       const { error } = await db.from('telegram_channels').upsert({
         telegram_user_id: userId, chat_id: chat.id, title: chat.title || chat.username || String(chat.id),
         username: chat.username ?? null,

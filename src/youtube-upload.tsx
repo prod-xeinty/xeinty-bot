@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Dropdown } from './choice-menu'
-import { ChannelIdentity } from './telegram-settings'
+import { ChannelIdentity, ChannelPanel } from './telegram-settings'
 import {
   createYoutubeConnection, disconnectYoutube, loadYoutubeChannelProfile, resumeYoutubeUpload, sendYoutubeChunk,
   startYoutubeUpload, youtubeConnection, type ChannelProfile, type YoutubeConnection, type YoutubeUploadResult, type YoutubeUploadStep, type YoutubeVisibility,
@@ -269,12 +269,19 @@ export function YoutubeChannelSettings({ initData, openLink }: { initData?: stri
   const needsConnection = connection?.configured && !connection.connected
   const needsAccess = connection?.connected && profile?.needsAccess
 
-  return <section className="form-panel batch-panel" aria-label="Настройки канала YouTube">
-    <div className="section-intro"><h2>YouTube</h2></div>
+  return <ChannelPanel name="YouTube" description="Публикация видео и расписание">
     {!initData && <p className="form-hint">Открой XEINTY через Telegram, чтобы подключить YouTube.</p>}
     {initData && !connection && !error && <p role="status">Проверяем подключение…</p>}
     {connection?.configured === false && <p className="form-hint">Подключение Google пока не настроено.</p>}
-    {connection?.connected && <ChannelIdentity title="YouTube подключён" address={profile?.username ?? undefined} profile={profile} loading={profileLoading} />}
+    {connection?.connected && <div className="channel-row">
+      <ChannelIdentity title="YouTube подключён" address={profile?.username ?? undefined} profile={profile} loading={profileLoading} />
+      <button type="button" className="outline-button" disabled={busy || profileLoading} onClick={() => void run(async (session) => {
+        await disconnectYoutube(session)
+        setConnection({ configured: true, connected: false })
+        setProfile(undefined)
+        setAuthUrl('')
+      })}>Отключить</button>
+    </div>}
     {needsAccess && <p className="form-hint">Обнови доступ Google, чтобы увидеть профиль канала и количество подписчиков.</p>}
     <div className="youtube-channel-actions">
       {(needsConnection || needsAccess) && <button type="button" className="outline-button" disabled={busy} onClick={() => void run(async (session) => {
@@ -287,12 +294,6 @@ export function YoutubeChannelSettings({ initData, openLink }: { initData?: stri
           setAuthUrl((await createYoutubeConnection(session, true)).url)
         })}>Разрешить управление расписанием</button>}
       {(needsConnection || authUrl || (initData && error)) && <button type="button" className="outline-button" disabled={busy} onClick={() => void refresh()}>Проверить подключение</button>}
-      {connection?.connected && <button type="button" className="outline-button" disabled={busy || profileLoading} onClick={() => void run(async (session) => {
-        await disconnectYoutube(session)
-        setConnection({ configured: true, connected: false })
-        setProfile(undefined)
-        setAuthUrl('')
-      })}>Отключить YouTube</button>}
     </div>
     {authUrl && <>
       <a className="video-download" href={authUrl} target="_blank" rel="noreferrer" onClick={openLink ? (event) => {
@@ -302,5 +303,5 @@ export function YoutubeChannelSettings({ initData, openLink }: { initData?: stri
       <p className="form-hint">После согласия вернись в XEINTY и проверь подключение.</p>
     </>}
     {error && <p className="video-error" role="alert">{error}</p>}
-  </section>
+  </ChannelPanel>
 }

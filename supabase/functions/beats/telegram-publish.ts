@@ -35,7 +35,7 @@ async function api<T>(method: string, payload: Record<string, unknown> | FormDat
   return result.result as T
 }
 
-export async function channelForPublisher(address: string, userId: number): Promise<Chat> {
+async function checkChannelAccess(address: string, userId: number, publish: boolean): Promise<Chat> {
   const chat = await api<Chat>('getChat', { chat_id: address })
   if (chat.type !== 'channel') throw new TelegramPublishError('Укажи канал Telegram.')
   const bot = await api<{ id: number }>('getMe', {})
@@ -43,13 +43,21 @@ export async function channelForPublisher(address: string, userId: number): Prom
     api<Member>('getChatMember', { chat_id: chat.id, user_id: userId }),
     api<Member>('getChatMember', { chat_id: chat.id, user_id: bot.id }),
   ])
-  if (botMember.status !== 'administrator' || !botMember.can_post_messages) {
-    throw new TelegramPublishError('Дай боту право публиковать сообщения в канале.')
+  if (botMember.status !== 'administrator' || (publish && !botMember.can_post_messages)) {
+    throw new TelegramPublishError(publish ? 'Дай боту право публиковать сообщения в канале.' : 'Добавь бота в администраторы канала.')
   }
-  if (member.status !== 'creator' && !(member.status === 'administrator' && member.can_post_messages)) {
-    throw new TelegramPublishError('У твоего аккаунта нет права публиковать в этом канале.')
+  if (member.status !== 'creator' && !(member.status === 'administrator' && (!publish || member.can_post_messages))) {
+    throw new TelegramPublishError(publish ? 'У твоего аккаунта нет права публиковать в этом канале.' : 'Импорт доступен администраторам канала.')
   }
   return chat
+}
+
+export function channelForPublisher(address: string, userId: number) {
+  return checkChannelAccess(address, userId, true)
+}
+
+export function channelForReader(address: string, userId: number) {
+  return checkChannelAccess(address, userId, false)
 }
 
 export async function postAudio(chat: Chat, tracks: { audio: string }[], caption: string, credits?: string[]): Promise<string> {

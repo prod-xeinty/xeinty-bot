@@ -11,7 +11,7 @@ type LibraryBeat = SearchableBeat & Pick<StoredBeat, 'youtubeLink' | 'telegramLi
 
 const collator = new Intl.Collator('ru', { numeric: true, sensitivity: 'base' })
 const publicationOptions = [
-  { value: 'all', label: 'Все биты' }, { value: 'draft', label: 'Без публикаций' },
+  { value: 'all', label: 'Все записи' }, { value: 'draft', label: 'Без публикаций' },
   { value: 'telegram', label: 'Есть пост в Telegram' }, { value: 'youtube', label: 'Есть видео на YouTube' },
   { value: 'planned', label: 'Запланированы' },
 ]
@@ -63,7 +63,7 @@ export function refineLibrary<T extends LibraryBeat>(beats: T[], filters: Librar
   })
 }
 
-export function BeatSearch({ value, onChange, label = 'Поиск битов' }: {
+export function BeatSearch({ value, onChange, label = 'Поиск аудио' }: {
   value: string; onChange: (query: string) => void; label?: string
 }) {
   return <div className="beat-search">

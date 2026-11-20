@@ -1,8 +1,15 @@
 import { Dropdown } from './choice-menu'
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { loadTelegramChannelProfile, type ChannelProfile, type TelegramChannel } from './cloud-beats'
 
 const subscriberFormat = new Intl.NumberFormat('ru-RU')
+
+export function ChannelPanel({ name, description, children }: { name: string; description: string; children: ReactNode }) {
+  return <section className="form-panel channel-panel" aria-label={"Настройки канала " + name}>
+    <div className="section-intro"><h2>{name}</h2><p>{description}</p></div>
+    {children}
+  </section>
+}
 
 export function ChannelIdentity({ title, address, profile, loading = false }: {
   title: string; address?: string; profile?: ChannelProfile; loading?: boolean
@@ -43,13 +50,14 @@ function TelegramChannelIdentity({ initData, channel }: { initData?: string; cha
   return <ChannelIdentity title={channel.title} address={username ? '@' + username : channel.id} profile={profile} loading={loading} />
 }
 
-export function TelegramChannels({ available, initData, channels, loadError, onConnect, onDisconnect }: {
+export function TelegramChannels({ available, initData, channels, loadError, onConnect, onDisconnect, openImport }: {
   available: boolean
   initData?: string
   channels: TelegramChannel[]
   loadError: string
   onConnect: (address: string) => Promise<void>
   onDisconnect: (id: string) => Promise<void>
+  openImport: () => void
 }) {
   const [address, setAddress] = useState('')
   const [busy, setBusy] = useState(false)
@@ -72,21 +80,22 @@ export function TelegramChannels({ available, initData, channels, loadError, onC
     })
   }
 
-  return <section className="form-panel batch-panel">
-    <p className="form-hint">Добавь @xeintybot в администраторы канала с правом «Публиковать сообщения». Затем укажи @имя канала или ID закрытого канала.</p>
+  return <ChannelPanel name="Telegram" description="Импорт аудио и статистика постов">
+    <p className="form-hint">Добавь @xeintybot в администраторы канала. Затем укажи @имя канала или ID закрытого канала.</p>
     {!available ? <p>Открой XEINTY через Telegram, чтобы подключить канал.</p> : <>
       <form onSubmit={connect}>
         <label className="field"><span>Канал Telegram</span><input required value={address} disabled={busy} placeholder="@имя_канала или -100…" onChange={(e) => setAddress(e.target.value)} /></label>
-        <button className="copy-button" disabled={busy || !address.trim()}>Подключить канал</button>
+        <button className="outline-button channel-connect" disabled={busy || !address.trim()}>Подключить канал</button>
       </form>
       {(error || loadError) && <p className="video-error" role="alert">{error || loadError}</p>}
       {channels.length === 0 && !loadError && <p className="form-hint">Подключённых каналов пока нет.</p>}
-      <ul className="telegram-channel-list">{channels.map((channel) => <li key={channel.id}>
+      <ul className="telegram-channel-list">{channels.map((channel) => <li className="channel-row" key={channel.id}>
         <TelegramChannelIdentity initData={initData} channel={channel} />
         <button type="button" className="outline-button" disabled={busy} onClick={() => void change(() => onDisconnect(channel.id))}>Отключить</button>
       </li>)}</ul>
+      {channels.length > 0 && <button type="button" className="outline-button channel-import" onClick={openImport}>Импортировать из Telegram</button>}
     </>}
-  </section>
+  </ChannelPanel>
 }
 
 export type CaptionTemplate = { id: string; name: string; text: string; linkText: string; linkUrl: string }
