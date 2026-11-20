@@ -10,7 +10,8 @@ export function TelegramImport({ initData, channels, initialSuggestion, openChan
 }) {
   const [preferredChannel, setPreferredChannel] = useState(initialSuggestion?.channel ?? '')
   const [first, setFirst] = useState(initialSuggestion?.first ?? '')
-  const [last, setLast] = useState(initialSuggestion?.last ?? '')
+  const [last, setLast] = useState(initialSuggestion?.last === initialSuggestion?.first ? '' : initialSuggestion?.last ?? '')
+  const [hideImported, setHideImported] = useState(false)
   const [result, setResult] = useState<TelegramImportPreview>()
   const [selected, setSelected] = useState<number[]>([])
   const [busy, setBusy] = useState<'read' | 'save'>()
@@ -26,7 +27,9 @@ export function TelegramImport({ initData, channels, initialSuggestion, openChan
     setBusy('read')
     setError('')
     try {
-      const page = await previewTelegramImport(initData, channel, first.trim(), last.trim(), cursor)
+      const firstLink = first.trim()
+      const lastLink = last.trim() || firstLink
+      const page = await previewTelegramImport(initData, channel, firstLink, lastLink, cursor)
       const all = new Map((cursor === undefined ? [] : result?.tracks ?? []).map((track) => [track.id, track]))
       const newIds = page.tracks.filter((track) => !track.exists && !all.has(track.id)).map((track) => track.id)
       for (const track of page.tracks) all.set(track.id, track)
@@ -64,7 +67,10 @@ export function TelegramImport({ initData, channels, initialSuggestion, openChan
   }
 
   function submit(event: FormEvent) { event.preventDefault(); void scan() }
-  const available = result?.tracks.filter((track) => !track.exists) ?? []
+  const tracks = result?.tracks ?? []
+  const available = tracks.filter((track) => !track.exists)
+  const importedCount = tracks.length - available.length
+  const visibleTracks = hideImported ? available : tracks
   const selection = new Set(selected)
   const allSelected = available.length > 0 && available.every((track) => selection.has(track.id))
 
@@ -76,23 +82,36 @@ export function TelegramImport({ initData, channels, initialSuggestion, openChan
       <form className="import-links" onSubmit={submit}>
         <Dropdown label="Канал Telegram" value={channel} disabled={Boolean(busy)}
           options={channels.map(({ id, title, username }) => ({ value: id, label: title + (username ? " (@" + username + ")" : "") }))}
-          onChange={(value) => { setPreferredChannel(value); reset() }} />
+          onChange={(value) => {
+            if (value === channel) return
+            setPreferredChannel(value)
+            setFirst('')
+            setLast('')
+            reset()
+          }} />
         <div className="import-fields">
           <label className="field"><span>Первый пост</span><input type="url" required maxLength={500} disabled={Boolean(busy)} placeholder="https://t.me/канал/7" value={first}
             onChange={(event) => { setFirst(event.currentTarget.value); reset() }} /></label>
-          <label className="field"><span>Последний пост</span><input type="url" required maxLength={500} disabled={Boolean(busy)} placeholder="https://t.me/канал/13" value={last}
+          <label className="field"><span>Последний пост (необязательно)</span><input type="url" maxLength={500} disabled={Boolean(busy)} placeholder="https://t.me/канал/13" value={last}
             onChange={(event) => { setLast(event.currentTarget.value); reset() }} /></label>
         </div>
-        <p className="form-hint">Вставь ссылки на крайние посты нужного периода. Если ссылка ведёт на трек в пачке, проверим всю пачку.</p>
-        <button className="primary-button" disabled={Boolean(busy) || !first.trim() || !last.trim()}><ListFilter size={17} /> {busy === "read" && !result ? "Ищем аудио…" : "Найти аудио"}</button>
+        <p className="form-hint">Вставь одну ссылку для поста или две для диапазона. Если ссылка ведёт на трек в пачке, проверим всю пачку.</p>
+        <button className="primary-button" disabled={Boolean(busy) || !first.trim()}><ListFilter size={17} /> {busy === "read" && !result ? "Ищем аудио…" : "Найти аудио"}</button>
       </form>
       {result && <section className="import-results" aria-label="Результаты поиска аудио">
         <div className="batch-library-head"><strong>Найдено аудио · {result.tracks.length}</strong><span>Проверено {result.scanned} из {result.total}</span></div>
-        {available.length > 0 && <button type="button" className="outline-button" disabled={Boolean(busy)} onClick={() => setSelected(allSelected ? [] : available.map((track) => track.id))}>
-          {allSelected ? "Снять выбор" : "Выбрать всё найденное"}
-        </button>}
-        {!result.tracks.length && <p className="form-hint">{result.next ? "На этом участке аудио нет. Можно продолжить поиск." : "В выбранном диапазоне аудио не найдено."}</p>}
-        {result.tracks.length > 0 && <ul className="import-track-list">{result.tracks.map((track) => <ImportTrack key={track.id} track={track} checked={selection.has(track.id)} busy={Boolean(busy)}
+        {tracks.length > 0 && <div className="import-actions">
+          {available.length > 0 && <button type="button" className="outline-button" disabled={Boolean(busy)}
+            onClick={() => setSelected(allSelected ? [] : available.map((track) => track.id))}>
+            {allSelected ? 'Снять выбор' : 'Выбрать все новые'}
+          </button>}
+          {importedCount > 0 && <button type="button" className="outline-button" onClick={() => setHideImported((current) => !current)}>
+            {hideImported ? 'Показать импортированные' : 'Скрыть импортированные'} · {importedCount}
+          </button>}
+        </div>}
+        {!tracks.length && <p className="form-hint">{result.next !== null ? 'На этом участке аудио нет. Можно продолжить поиск.' : 'По указанным ссылкам аудио не найдено.'}</p>}
+        {hideImported && importedCount > 0 && !available.length && <p className="form-hint">Всё найденное аудио уже в библиотеке.</p>}
+        {visibleTracks.length > 0 && <ul className="import-track-list">{visibleTracks.map((track) => <ImportTrack key={track.id} track={track} checked={selection.has(track.id)} busy={Boolean(busy)}
           toggle={(checked) => setSelected((previous) => checked ? [...previous, track.id] : previous.filter((id) => id !== track.id))} />)}</ul>}
         <div className="import-actions">
           {result.next !== null && <button type="button" className="outline-button" disabled={Boolean(busy)} onClick={() => void scan(result.next ?? undefined)}>
