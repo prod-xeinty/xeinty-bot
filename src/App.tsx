@@ -16,7 +16,7 @@ import { getTelegramWebApp } from './telegram'
 import { makeStaticVideo, videoProfileLabel, type VideoStage } from './video'
 import { saveVideoFile } from './save-video'
 import { deleteStoredBeat, loadStoredBeats, saveBeatCover, saveBeatMetadata, saveNewBeat, type StoredBeat } from './beat-store'
-import { changeYoutubeSchedule, refreshYoutubeSchedule, cloudConfigured, connectTelegramChannel, disconnectTelegramChannel, loadTelegramChannels, type BeatCursor, type TelegramChannel, type TelegramPublication, type PublicationLinks, createCloudBeat, deleteCloudBeat, loadCloudBeats, publishCloudTelegram, remoteFile, replaceCloudCover, updateCloudBeat } from './cloud-beats'
+import { changeYoutubeSchedule, refreshYoutubeSchedule, cloudConfigured, connectTelegramChannel, disconnectTelegramChannel, loadTelegramChannels, loadTelegramImportSuggestions, type TelegramImportSuggestion, type BeatCursor, type TelegramChannel, type TelegramPublication, type PublicationLinks, createCloudBeat, deleteCloudBeat, loadCloudBeats, publishCloudTelegram, remoteFile, replaceCloudCover, updateCloudBeat } from './cloud-beats'
 import { normalizeMusicKey } from './music-key'
 import { Dropdown, KeyPicker } from './choice-menu'
 import { parseAudioName, telegramLine } from './filename'
@@ -27,8 +27,10 @@ import { beatCaptionValues, CaptionTemplates, CaptionTools, readCaptionPreferenc
 type Screen = 'library' | 'create' | 'publish' | 'channels' | 'more' | 'templates' | 'overview' | 'detail' | 'import'
 type DetailTab = 'data' | 'publications'
 type PublishMode = 'single' | 'batch' | 'planned'
+const telegramPublishingEnabled = false
 const publishModes: { id: PublishMode; label: string }[] = [
-  { id: 'single', label: 'Один бит' }, { id: 'batch', label: 'Пачка битов' }, { id: 'planned', label: 'Запланировано' },
+  { id: 'single', label: 'На YouTube' }, ...(telegramPublishingEnabled ? [{ id: 'batch' as const, label: 'Пачка битов' }] : []),
+  { id: 'planned', label: 'Запланировано' },
 ]
 type Beat = Omit<StoredBeat, 'createdAt'> & {
   createdAt?: number; cover: number; coverUrl?: string; audioUrl?: string; audioFile?: File; coverFile?: File; isDemo?: boolean; cloud?: boolean
@@ -76,6 +78,9 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
   const cloudPageRequest = useRef(false)
   const importPromptKey = 'xeinty-telegram-import-seen:' + (webApp?.initDataUnsafe.user?.id ?? 'telegram')
   const [dismissedImport, setDismissedImport] = useState('')
+  const [importSuggestions, setImportSuggestions] = useState<TelegramImportSuggestion[]>([])
+  const [importSuggestion, setImportSuggestion] = useState<TelegramImportSuggestion>()
+  const [importRevision, setImportRevision] = useState(0)
   const [screen, setScreen] = useState<Screen>('library')
   const [tab, setTab] = useState<DetailTab>('data')
   const [detailFromStats, setDetailFromStats] = useState(false)
@@ -101,7 +106,7 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
   const [includeTelegramCover, setIncludeTelegramCover] = useState(() => localStorage.getItem('xeinty-telegram-cover') !== 'false')
   const batchIncludeCover = batchDraft.draft.includeCover ?? includeTelegramCover
   const [coverFile, setCoverFile] = useState<File | null>(null)
-  const [publicationPlatform, setPublicationPlatform] = useState<'telegram' | 'youtube'>('telegram')
+  const [publicationPlatform, setPublicationPlatform] = useState<'telegram' | 'youtube'>('youtube')
   const [videoSource, setVideoSource] = useState<'generated' | 'own'>('generated')
   const [videoStage, setVideoStage] = useState<VideoStage | null>(null)
   const [videoError, setVideoError] = useState('')
@@ -130,7 +135,7 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
   const playingTrack = beats.find((beat) => beat.id === audioPlayer.trackId && beat.audioUrl)
 
   function sourcePostLink(url: string) {
-    return <a className="outline-button" href={url} target="_blank" rel="noreferrer"
+    return <a className="outline-button source-post-link" href={url} target="_blank" rel="noreferrer"
       onClick={(event) => { if (webApp?.openTelegramLink) { event.preventDefault(); webApp.openTelegramLink(url) } }}>
       <ExternalLink size={16} /> Открыть в Telegram
     </a>
@@ -439,6 +444,24 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
     if (localReady && telegramChecked && (!cloudAvailable || cloudReady)) onStartupReady()
   }, [localReady, telegramChecked, cloudAvailable, cloudReady, onStartupReady])
 
+  useEffect(() => {
+    if (!statsSession || !channels.length) return
+    let request: AbortController | undefined
+    function refresh() {
+      if (document.visibilityState === 'hidden' || request || !statsSession) return
+      const current = new AbortController()
+      request = current
+      const timeout = window.setTimeout(() => current.abort(), 10000)
+      void loadTelegramImportSuggestions(statsSession, current.signal).then(({ suggestions }) => {
+        if (!current.signal.aborted) setImportSuggestions(suggestions ?? [])
+      }).catch(() => {}).finally(() => { window.clearTimeout(timeout); request = undefined })
+    }
+    refresh()
+    const timer = window.setInterval(refresh, 60000)
+    document.addEventListener('visibilitychange', refresh)
+    return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', refresh); request?.abort() }
+  }, [statsSession, channels.length, importRevision])
+
   function dismissImportPrompt() {
     setDismissedImport(importPromptKey)
     try { localStorage.setItem(importPromptKey, 'true') } catch { /* The prompt remains hidden in this session. */ }
@@ -449,7 +472,7 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
     try { return !localStorage.getItem(importPromptKey) } catch { return true }
   }
 
-  function openImport() { dismissImportPrompt(); navigate('import') }
+  function openImport(suggestion?: TelegramImportSuggestion) { dismissImportPrompt(); setImportSuggestion(suggestion); navigate('import') }
 
   async function loadLibraryPage(cursor?: BeatCursor) {
     if (!webApp?.initData || cloudPageRequest.current) return
@@ -469,7 +492,7 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
 
   function moreCloudBeats() {
     return cloudNext && <button type="button" className="outline-button library-more" disabled={cloudPageBusy} onClick={() => void loadLibraryPage(cloudNext)}>
-      {cloudPageBusy ? "Загружаем…" : "Загрузить ещё биты"}
+      {cloudPageBusy ? "Загружаем…" : "Загрузить ещё записи"}
     </button>
   }
 
@@ -491,7 +514,7 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
     setConfirmDelete(false)
     navigate('detail')
   }
-  function openPublish(beat?: Beat, mode: 'single' | 'batch' = 'single') { if (beat && !beat.isDemo) { setSelectedId(beat.id); setPublishQuery('') } setPublishMode(mode); setPublicationPlatform('telegram'); navigate('publish') }
+  function openPublish(beat?: Beat, mode: 'single' | 'batch' = 'single') { if (beat && !beat.isDemo) { setSelectedId(beat.id); setPublishQuery('') } setPublishMode(mode); setPublicationPlatform('youtube'); navigate('publish') }
   async function persistBeat(beat: Beat, publicationLinks?: PublicationLinks) {
     if (!beat.cloud) return saveBeatMetadata(storedBeat(beat))
     if (!webApp?.initData) throw new Error('Telegram session required')
@@ -742,15 +765,14 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
     openBeat(beat, 'data'); notify(beat.cloud ? 'Бит сохранён в облаке' : 'Черновик сохранён на этом устройстве')
   }
   const nav = [
-    { id: 'library' as Screen, label: 'Биты', Icon: ListMusic },
-    { id: 'create' as Screen, label: 'Создать', Icon: Plus },
+    { id: 'library' as Screen, label: 'Библиотека', Icon: ListMusic },
     { id: 'publish' as Screen, label: 'Публикация', Icon: Send },
     { id: 'channels' as Screen, label: 'Каналы', Icon: Radio },
     { id: 'overview' as Screen, label: 'Статистика', Icon: AudioLines },
     { id: 'more' as Screen, label: 'Ещё', Icon: Ellipsis },
   ]
 
-  const activeScreen = screen === 'detail' ? 'library' : screen === 'templates' ? 'more' : screen === 'import' ? 'channels' : screen
+  const activeScreen = screen === 'detail' || screen === 'create' ? 'library' : screen === 'templates' ? 'more' : screen === 'import' ? 'channels' : screen
   const mobileNav = nav.filter(({ id }) => id !== 'overview')
   const activeNavIndex = nav.findIndex(({ id }) => id === activeScreen)
   const activeMobileIndex = mobileNav.findIndex(({ id }) => id === activeScreen)
@@ -761,36 +783,46 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
       <div className="ambient-form ambient-form--b" />
     </div>
     <div className="app-frame">
-      <header className="topbar"><button className="topbar-action topbar-create" onClick={() => navigate('create')} aria-label="Добавить новый бит"><Plus size={20} /></button><button className="wordmark" onClick={() => navigate('library')} aria-label="XEINTY — к библиотеке"><img src={xeintyLogo} alt="" width={48} height={48} /></button><span className="topbar-badge">Демо-версия</span><button className="topbar-action topbar-overview" onClick={() => navigate('overview')} aria-label="Открыть статистику"><AudioLines size={19} /></button></header>
+      <header className="topbar"><button className="topbar-action topbar-create" onClick={() => cloudAvailable ? openImport() : navigate("create")} aria-label={cloudAvailable ? "Импортировать аудио" : "Добавить аудио"}><Plus size={20} /></button><button className="wordmark" onClick={() => navigate('library')} aria-label="XEINTY — к библиотеке"><img src={xeintyLogo} alt="" width={48} height={48} /></button><span className="topbar-badge">Демо-версия</span><button className="topbar-action topbar-overview" onClick={() => navigate('overview')} aria-label="Открыть статистику"><AudioLines size={19} /></button></header>
       <div className="workspace">
-        <aside className="desktop-rail" aria-label="Навигация"><div className="rail-head"><strong>Рабочее пространство</strong><span>Биты и публикации</span></div><nav style={{ '--nav-i': activeNavIndex } as CSSProperties}>{nav.map(({ id, label, Icon }) => <button key={id} className={activeScreen === id ? 'is-active' : ''} onClick={() => navigate(id)}><Icon size={19} />{label}<ChevronRight size={16} /></button>)}</nav><div className="rail-footer"><AudioLines size={18} /><span>Один бит — все материалы для его публикации.</span></div></aside>
+        <aside className="desktop-rail" aria-label="Навигация"><div className="rail-head"><strong>Рабочее пространство</strong><span>Аудио и публикации</span></div><nav style={{ '--nav-i': activeNavIndex } as CSSProperties}>{nav.map(({ id, label, Icon }) => <button key={id} className={activeScreen === id ? 'is-active' : ''} onClick={() => navigate(id)}><Icon size={19} />{label}<ChevronRight size={16} /></button>)}</nav><div className="rail-footer"><AudioLines size={18} /><span>Аудио, исходные посты и статистика.</span></div></aside>
         <main className="main-content" key={screen}>
           {screen === 'library' && <>
             {importPromptVisible() && <section className="form-panel import-invite" aria-label="Импорт библиотеки">
-              <div className="section-intro"><h2>Уже публикуешь биты в Telegram?</h2><p>Перенеси каталог из своего канала.</p></div>
-              <div className="import-actions"><button type="button" className="primary-button" onClick={openImport}>Импортировать из Telegram</button>
+              <div className="section-intro"><h2>Уже публикуешь музыку в Telegram?</h2><p>Перенеси каталог из своего канала.</p></div>
+              <div className="import-actions"><button type="button" className="primary-button" onClick={() => openImport()}>Импортировать из Telegram</button>
                 <button type="button" className="outline-button" onClick={dismissImportPrompt}>Позже</button></div>
             </section>}
-            <div className="library-context"><span>Текущий проект</span><span>{projectCount(beats.length)}</span></div>
-            <section className="feature-section" aria-label="Текущий бит">
+            {importSuggestions.some((item) => channels.some(({ id }) => id === item.channel)) && <section className="form-panel import-invite" aria-label="Новое аудио в Telegram">
+              <div className="section-intro"><h2>Новое аудио в Telegram</h2></div>
+              <ul className="channel-suggestions">{importSuggestions.map((item) => {
+                const channel = channels.find(({ id }) => id === item.channel)
+                return channel && <li className="channel-row" key={item.channel}>
+                  <div><strong>{channel.title}</strong><small>Новых аудио: {item.count}</small></div>
+                  <button type="button" className="outline-button" onClick={() => openImport(item)}>Посмотреть <ArrowRight size={15} /></button>
+                </li>
+              })}</ul>
+            </section>}
+            <div className="library-context"><span>Последняя запись</span><span>{projectCount(beats.length)}</span></div>
+            <section className="feature-section" aria-label="Последняя запись">
               <div className="feature-card">
                 <div className="player-top"><Cover beat={latest} className="feature-cover" /><div className="feature-content"><span className="feature-status">{latest.isDemo ? 'Демо-проект' : latest.status}</span><h2>{latest.title}</h2><p>{latest.bpm} BPM <span>·</span> {latest.key}</p></div><button className="player-open" onClick={() => openBeat(latest)} aria-label={`Открыть ${latest.title}`}><ChevronRight size={19} /></button></div>
-                <div className="player-footer"><span>{latest.audioUrl ? latest.audioName : latest.telegramSourceUrl ? 'Аудио в исходном посте' : 'Аудио не загружено'}</span><div className="player-controls">{latest.audioUrl ? trackPlayButton(latest) : latest.telegramSourceUrl ? sourcePostLink(latest.telegramSourceUrl) : <button className="player-publish" onClick={() => openPublish(latest)} aria-label="Подготовить публикацию"><Send size={16} /><span>Публикация</span></button>}<button className="player-next" onClick={() => openBeat(latest)}>Открыть бит <ArrowRight size={16} /></button></div></div>
+                <div className="player-footer"><span>{latest.audioUrl ? latest.audioName : latest.telegramSourceUrl ? 'Аудио в исходном посте' : 'Аудио не загружено'}</span><div className="player-controls">{latest.audioUrl ? trackPlayButton(latest) : latest.telegramSourceUrl ? sourcePostLink(latest.telegramSourceUrl) : <button className="player-publish" onClick={() => openPublish(latest)} aria-label="Подготовить публикацию"><Send size={16} /><span>Публикация</span></button>}<button className="player-next" onClick={() => openBeat(latest)}>Открыть запись <ArrowRight size={16} /></button></div></div>
               </div>
             </section>
             <section className="tools-section"><div className="section-heading"><h2>Рабочие шаги</h2></div><div className="tool-grid"><button style={staggerStyle(0)} onClick={() => openBeat(latest, 'data')}><ListMusic size={20} /><span>Параметры</span></button><button style={staggerStyle(1)} onClick={() => openPublish(latest)}><Clipboard size={20} /><span>Публикация</span></button><button style={staggerStyle(2)} onClick={() => openBeat(latest, 'publications')}><Link2 size={20} /><span>Публикации</span></button></div></section>
-            <button className="upload-banner" onClick={() => navigate('create')}><span className="upload-banner-icon"><UploadCloud size={23} /></span><span><strong>Добавить свой бит</strong><small>Обложка, аудио, BPM и теги</small></span><span className="upload-banner-arrow"><ArrowRight size={18} /></span></button>
-            <section className="list-section"><div className="list-header"><h2>Библиотека битов</h2></div><LibraryControls filters={libraryFilters} onChange={setLibraryFilters} count={libraryBeats.length} total={beats.length} /><div className="beat-list">{libraryBeats.map((beat, index) => <button className="beat-row" key={beat.id} style={staggerStyle(index)} onClick={() => openBeat(beat)}>{beat.isDemo ? <span className="row-wave"><Waveform /></span> : <Cover beat={beat} className="row-cover" />}<span className="row-main"><strong>{beat.title}</strong><small>{beat.bpm} BPM · {beat.key}</small></span><span className="row-meta">{beat.telegramSourceUrl ? 'Telegram' : beat.cloud ? 'Облако' : beat.isDemo ? beat.status : 'На устройстве'}</span><ArrowRight className="row-arrow" size={18} /></button>)}</div>{!libraryBeats.length && <p className="form-hint library-empty">По этому запросу ничего не найдено.</p>}{moreCloudBeats()}<p className="demo-note"><CircleHelp size={15} /> {cloudAvailable ? 'Облачные биты доступны в Telegram на других устройствах. Локальные записи можно перенести из карточки бита.' : 'Примеры показывают интерфейс. Пока свои биты хранятся только на этом устройстве.'}</p></section>
+            <div className="library-add"><button type="button" className="outline-button" onClick={() => navigate("create")}><UploadCloud size={17} /> Добавить файл с устройства</button></div>
+            <section className="list-section"><div className="list-header"><h2>Аудиобиблиотека</h2></div><LibraryControls filters={libraryFilters} onChange={setLibraryFilters} count={libraryBeats.length} total={beats.length} /><div className="beat-list">{libraryBeats.map((beat, index) => <button className="beat-row" key={beat.id} style={staggerStyle(index)} onClick={() => openBeat(beat)}>{beat.isDemo ? <span className="row-wave"><Waveform /></span> : <Cover beat={beat} className="row-cover" />}<span className="row-main"><strong>{beat.title}</strong><small>{beat.bpm} BPM · {beat.key}</small></span><span className="row-meta">{beat.telegramSourceUrl ? 'Telegram' : beat.cloud ? 'Облако' : beat.isDemo ? beat.status : 'На устройстве'}</span><ArrowRight className="row-arrow" size={18} /></button>)}</div>{!libraryBeats.length && <p className="form-hint library-empty">По этому запросу ничего не найдено.</p>}{moreCloudBeats()}<p className="demo-note"><CircleHelp size={15} /> {cloudAvailable ? 'Облачная библиотека доступна в Telegram на других устройствах.' : 'Примеры показывают интерфейс. Свои файлы здесь сохраняются на этом устройстве.'}</p></section>
           </>}
           {screen === 'create' && <>
-            <div className="page-heading"><div><h1>Новый бит</h1><p>Добавь параметры, обложку и аудио для предпросмотра.</p></div></div>
-            <form className="create-layout" onSubmit={addBeat}><div className="form-panel"><div className="panel-title"><span>01</span><div><h2>Основное</h2><p>Название и музыкальные параметры</p></div></div><label className="field"><span>Название бита *</span><input required maxLength={40} placeholder="Например, NO SIGNAL" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></label><div className="field-grid"><label className="field"><span>BPM</span><input type="number" min="1" max="300" placeholder="138" value={form.bpm} onChange={(e) => setForm({ ...form, bpm: e.target.value })} /></label><div className="field"><span>Тональность</span><KeyPicker value={form.key} onChange={(key) => setForm((current) => ({ ...current, key }))} onCommit={(value) => { const key = normalizeMusicKey(value); if (key !== null) setForm((current) => ({ ...current, key })) }} /></div></div><label className="field"><span>Теги и настроение</span><input placeholder="dark trap, ambient, type beat" value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} /></label></div>
+            <div className="page-heading"><div><h1>Добавить аудио</h1><p>Добавь параметры, обложку и аудио для предпросмотра.</p></div></div>
+            <form className="create-layout" onSubmit={addBeat}><div className="form-panel"><div className="panel-title"><span>01</span><div><h2>Основное</h2><p>Название и музыкальные параметры</p></div></div><label className="field"><span>Название записи *</span><input required maxLength={40} placeholder="Например, NO SIGNAL" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></label><div className="field-grid"><label className="field"><span>BPM</span><input type="number" min="1" max="300" placeholder="138" value={form.bpm} onChange={(e) => setForm({ ...form, bpm: e.target.value })} /></label><div className="field"><span>Тональность</span><KeyPicker value={form.key} onChange={(key) => setForm((current) => ({ ...current, key }))} onCommit={(value) => { const key = normalizeMusicKey(value); if (key !== null) setForm((current) => ({ ...current, key })) }} /></div></div><label className="field"><span>Теги и настроение</span><input placeholder="dark trap, ambient, type beat" value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} /></label></div>
               <div className="form-panel"><div className="panel-title"><span>02</span><div><h2>Файлы</h2><p>Обложка и аудио для предпросмотра</p></div></div><div className="upload-grid"><label className="upload-zone"><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => setCoverFile(e.target.files?.[0] ?? null)} /><ImagePlus size={25} /><strong>{coverFile ? coverFile.name : 'Обложка'}</strong><span>PNG, JPG или WEBP</span></label><label className="upload-zone"><input type="file" accept={cloudAvailable ? '.mp3,audio/mpeg' : 'audio/*,.mp3,.wav'} onChange={(e) => chooseAudio(e.target.files?.[0] ?? null)} /><UploadCloud size={26} /><strong>{audioFile ? audioFile.name : 'Аудиофайл'}</strong><span>{cloudAvailable ? 'MP3 до 15 МБ' : 'MP3 или WAV'}</span></label></div><p className="form-hint">{cloudAvailable ? 'MP3 и обложка сохранятся в облаке. WAV и MP4 останутся на твоём устройстве.' : 'Файлы пока сохранятся на этом устройстве. Облако работает при запуске через Telegram после подключения проекта.'}</p></div>
               <div className="create-submit"><button type="submit" className="primary-button" disabled={savingBeat}>{savingBeat ? 'Сохраняем…' : 'Создать черновик'} {!savingBeat && <ArrowRight size={19} />}</button><span>{cloudAvailable ? 'Черновик будет доступен в Telegram на других устройствах.' : 'Черновик сохранится в этом браузере.'}</span></div></form>
           </>}
           {screen === 'publish' && <>
             <div className="page-heading"><div><h1>Публикация</h1><p>Подготовь публикацию или проверь расписание YouTube.</p></div></div>
-            <div className="publish-mode publish-mode--three" role="tablist" aria-label="Разделы публикации"
+            <div className={telegramPublishingEnabled ? "publish-mode publish-mode--three" : "publish-mode"} role="tablist" aria-label="Разделы публикации"
               style={{ '--tab-i': publishModes.findIndex(({id}) => id === publishMode) } as CSSProperties}>
               {publishModes.map(({id, label}) => <button key={id} role="tab" aria-selected={publishMode === id}
                 className={publishMode === id ? 'is-active' : undefined} onClick={() => setPublishMode(id)}>{label}</button>)}
@@ -803,17 +835,22 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
               openComposer={() => { setPublishMode('single'); setPublicationPlatform('youtube') }} />}
             {publishMode === 'single' && <div className="publish-stage" key="single">
               {publicationBeats.length ? <>
-                <div className="publish-beat-search"><BeatSearch label="Поиск бита для публикации" value={publishQuery} onChange={setPublishQuery} /></div>
-                {matchingPublicationBeats.length ? <div className="publish-beats" role="group" aria-label="Выбрать бит">{matchingPublicationBeats.map((beat, index) => <button style={staggerStyle(index)} key={beat.id} className={selected.id === beat.id ? 'is-active' : ''} aria-pressed={selected.id === beat.id} onClick={() => { setSelectedId(beat.id); setVideoError('') }}><Cover beat={beat} className="publish-beat-cover" /><span><strong>{beat.title}</strong><small>{beat.bpm} BPM · {beat.key}</small></span><Check size={16} className="publish-beat-check" /></button>)}</div> : <p className="form-hint">По этому запросу ничего не найдено.</p>}
-              </> : <div className="publish-empty"><FileAudio2 size={25} /><strong>Пока нет своих битов</strong><p>Сначала добавь аудиофайл — затем здесь появятся тексты и сборка видео.</p><button className="outline-button" onClick={() => navigate('create')}>Добавить бит <ArrowRight size={17} /></button></div>}
+                <div className="publish-beat-search"><BeatSearch label="Поиск аудио для публикации" value={publishQuery} onChange={setPublishQuery} /></div>
+                {publishQuery.trim() && (matchingPublicationBeats.length ? <ul className="publish-search-results" aria-label="Результаты поиска аудио">
+                  {matchingPublicationBeats.map((beat) => <li key={beat.id}><button type="button" onClick={() => { setSelectedId(beat.id); setPublishQuery(""); setVideoError("") }}>
+                    <span>{beat.title}</span><small>{[beat.bpm !== "—" ? beat.bpm + " BPM" : "", beat.key !== "—" ? beat.key : ""].filter(Boolean).join(" · ")}</small>
+                    <ArrowRight size={15} aria-hidden="true" />
+                  </button></li>)}
+                </ul> : <p className="form-hint">По этому запросу ничего не найдено.</p>)}
+              </> : <div className="publish-empty"><FileAudio2 size={25} /><strong>В библиотеке пока нет аудио</strong><p>Добавь запись, чтобы подготовить видео для YouTube.</p><button className="outline-button" onClick={() => cloudAvailable ? openImport() : navigate("create")}>{cloudAvailable ? "Импортировать из Telegram" : "Добавить аудио"} <ArrowRight size={17} /></button></div>}
               {moreCloudBeats()}
               {!selected.isDemo && <div className="detail-section">
-              <div className="section-intro"><h2>Для площадок</h2><p>Выбран бит · {selected.title}</p></div>
-                <div className="platform-switch" role="tablist" aria-label="Площадка" style={{ '--tab-i': publicationPlatform === 'youtube' ? 1 : 0 } as CSSProperties}><button role="tab" aria-selected={publicationPlatform === 'telegram'} className={publicationPlatform === 'telegram' ? 'is-active' : ''} onClick={() => setPublicationPlatform('telegram')}>Telegram</button><button role="tab" aria-selected={publicationPlatform === 'youtube'} className={publicationPlatform === 'youtube' ? 'is-active' : ''} onClick={() => setPublicationPlatform('youtube')}>YouTube</button></div>
-              <div className="publication-grid">
-                <div className={`publication-card ${publicationPlatform === 'telegram' ? 'is-current' : ''}`}><div className="publication-card-head"><div className="platform-icon telegram-icon"><Send size={20} /></div><div><span>TELEGRAM</span><h3>Подпись к посту</h3></div></div><textarea aria-label="Подпись для Telegram" placeholder="Добавить подпись (необязательно)" value={selected.telegramCaption} maxLength={1024} onBlur={(e) => rememberHashtags(e.currentTarget.value)} onChange={(e) => updateBeat({ telegramCaption: e.target.value })} />{captionTools(selected.telegramCaption, (telegramCaption) => updateBeat({ telegramCaption }))}<label className="batch-cover-toggle"><input type="checkbox" checked={includeTelegramCover} onChange={(event) => toggleTelegramCover(event.target.checked)} /><span>Прикладывать обложку к посту</span></label>{cloudAvailable && selected.cloud && selected.audioUrl && <DirectTelegramPublication channels={channels} initData={webApp?.initData ?? ''} onRecovered={applyTelegramResult} key={selected.id} publishedCount={selected.telegramLink.trim() ? 1 : 0} publish={(attemptId, channel, republish) => publishTelegram(attemptId, channel, [selected], selected.telegramCaption, { useSavedCover: includeTelegramCover, republish })} />}
+              <div className="section-intro"><h2>Публикация на YouTube</h2><p>Выбрано · {selected.title}</p></div>
+                {telegramPublishingEnabled && <div className="platform-switch" role="tablist" aria-label="Площадка" style={{ '--tab-i': publicationPlatform === 'youtube' ? 1 : 0 } as CSSProperties}><button role="tab" aria-selected={publicationPlatform === 'telegram'} className={publicationPlatform === 'telegram' ? 'is-active' : ''} onClick={() => setPublicationPlatform('telegram')}>Telegram</button><button role="tab" aria-selected={publicationPlatform === 'youtube'} className={publicationPlatform === 'youtube' ? 'is-active' : ''} onClick={() => setPublicationPlatform('youtube')}>YouTube</button></div>}
+              <div className={telegramPublishingEnabled ? "publication-grid" : "publication-grid publication-grid--single"}>
+                {telegramPublishingEnabled && <div className={`publication-card ${publicationPlatform === 'telegram' ? 'is-current' : ''}`}><div className="publication-card-head"><div className="platform-icon telegram-icon"><Send size={20} /></div><div><span>TELEGRAM</span><h3>Подпись к посту</h3></div></div><textarea aria-label="Подпись для Telegram" placeholder="Добавить подпись (необязательно)" value={selected.telegramCaption} maxLength={1024} onBlur={(e) => rememberHashtags(e.currentTarget.value)} onChange={(e) => updateBeat({ telegramCaption: e.target.value })} />{captionTools(selected.telegramCaption, (telegramCaption) => updateBeat({ telegramCaption }))}<label className="batch-cover-toggle"><input type="checkbox" checked={includeTelegramCover} onChange={(event) => toggleTelegramCover(event.target.checked)} /><span>Прикладывать обложку к посту</span></label>{cloudAvailable && selected.cloud && selected.audioUrl && <DirectTelegramPublication channels={channels} initData={webApp?.initData ?? ''} onRecovered={applyTelegramResult} key={selected.id} publishedCount={selected.telegramLink.trim() ? 1 : 0} publish={(attemptId, channel, republish) => publishTelegram(attemptId, channel, [selected], selected.telegramCaption, { useSavedCover: includeTelegramCover, republish })} />}
                   {selected.telegramSourceUrl && !selected.audioUrl && <p className="form-hint">Аудио этого бита доступно в исходном посте Telegram.</p>}
-                </div>
+                </div>}
                 <div className={`publication-card ${publicationPlatform === 'youtube' ? 'is-current' : ''}`}><div className="publication-card-head"><div className="platform-icon youtube-icon">▶</div><div><span>YOUTUBE</span><h3>Описание видео</h3></div></div><textarea aria-label="Описание для YouTube" placeholder="Описание (необязательно)" maxLength={5000} value={selected.youtubeDescription} onChange={(e) => updateBeat({ youtubeDescription: e.target.value })} />{captionTools(selected.youtubeDescription, (youtubeDescription) => updateBeat({ youtubeDescription }), 'youtube')}<label className="keywords-field"><span>КЛЮЧЕВЫЕ СЛОВА</span><input aria-label="Ключевые слова YouTube" value={selected.youtubeKeywords} onChange={(e) => updateBeat({ youtubeKeywords: e.target.value })} /></label>
 
               <div className="video-tool"><Dropdown label="Видео для YouTube" value={videoSource} onChange={(value) => setVideoSource(value === 'own' ? 'own' : 'generated')}
@@ -847,7 +884,7 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
 
             </div>}
             </div>}
-            {publishMode === 'batch' && <>
+            {telegramPublishingEnabled && publishMode === 'batch' && <>
               <div className="section-intro"><h2>Пачка битов</h2><p>Несколько аудиофайлов для одного альбома Telegram.</p></div>
                         {batchDraft.status === "loading" ? <p className="form-hint" role="status">Открываем черновик…</p> : <div className="form-panel batch-panel">
               {(batchDraft.hasContent || batchDraft.status === "error") && <div className="batch-draft-bar">
@@ -949,14 +986,12 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
           {screen === 'import' && <>
             <button className="back-link" onClick={() => navigate("channels")}><ArrowLeft size={17} /> Каналы</button>
             <div className="page-heading"><div><h1>Импорт из Telegram</h1><p>Добавь карточки со ссылками на аудио из своего канала.</p></div></div>
-            <TelegramImport initData={cloudAvailable ? webApp?.initData : undefined} channels={channels}
-              openChannels={() => navigate("channels")} openLibrary={() => navigate("library")} onSaved={() => void loadLibraryPage()} />
+            <TelegramImport initData={cloudAvailable ? webApp?.initData : undefined} channels={channels} initialSuggestion={importSuggestion}
+              openChannels={() => navigate("channels")} openLibrary={() => navigate("library")} onSaved={() => { void loadLibraryPage(); setImportRevision((value) => value + 1) }} />
           </>}
           {screen === 'channels' && <>
-            <div className="page-heading"><div><h1>Каналы</h1><p>Куда XEINTY может публиковать биты.</p></div></div>
-            <h2 className="channel-section-title">Telegram</h2>
-            <TelegramChannels available={cloudAvailable} initData={webApp?.initData} channels={channels} loadError={channelLoadError} onConnect={addChannel} onDisconnect={removeChannel} />
-            {cloudAvailable && <button type="button" className="outline-button library-more" onClick={openImport}>Импортировать из Telegram <ArrowRight size={16} /></button>}
+            <div className="page-heading"><div><h1>Каналы</h1><p>Импорт из Telegram и публикация на YouTube.</p></div></div>
+            <TelegramChannels available={cloudAvailable} initData={webApp?.initData} channels={channels} loadError={channelLoadError} onConnect={addChannel} onDisconnect={removeChannel} openImport={() => openImport()} />
             <YoutubeChannelSettings initData={cloudAvailable ? webApp?.initData : undefined}
               openLink={webApp?.openLink ? (url) => webApp.openLink?.(url) : undefined} />
           </>}
@@ -970,10 +1005,10 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
           </>}
           {screen === 'detail' && selected && <>
             <button className="back-link" onClick={() => navigate(focusedPublication ? 'publish' : detailFromStats ? 'overview' : 'library')}>
-              <ArrowLeft size={17} /> {focusedPublication ? 'К расписанию' : detailFromStats ? 'К статистике' : 'Все биты'}
+              <ArrowLeft size={17} /> {focusedPublication ? 'К расписанию' : detailFromStats ? 'К статистике' : 'Библиотека'}
             </button><section className="detail-hero"><Cover beat={selected} className="detail-cover" /><div className="detail-identity"><div className="eyebrow">{selected.isDemo ? 'Демо-проект' : selected.status}</div><h1>{selected.title}</h1><p>{selected.tags}</p><div className="meta-row"><span>{selected.bpm} BPM</span><i /><span>{selected.key}</span></div><div className="detail-audio">{selected.audioUrl ? <><FileAudio2 size={17} /><span>{selected.audioName}</span>{trackPlayButton(selected)}</> : selected.telegramSourceUrl ? sourcePostLink(selected.telegramSourceUrl) : <><Music2 size={18} /><span>{selected.isDemo ? 'Аудио для этого демо-бита не загружено' : 'Аудиофайл не добавлен'}</span></>}</div></div></section>
             <div className="detail-tabs" role="tablist" aria-label="Разделы бита">{([['data', 'Данные'], ['publications', 'Публикации']] as [DetailTab, string][]).map(([id, label]) => <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? 'is-active' : ''} onClick={() => setTab(id)}>{label}</button>)}</div>
-            {tab === 'data' && <div className="detail-section" key="data"><div className="section-intro"><h2>Данные бита</h2><p>Изменения сохраняются автоматически.</p></div><div className="data-card data-card--editable"><label className="field"><span>НАЗВАНИЕ</span><input aria-label="Название бита" maxLength={120} value={selected.title} onChange={(event) => updateBeat({ title: event.target.value })} /></label><label className="field"><span>ТЕМП (BPM)</span><input aria-label="Темп BPM" type="number" min="1" max="300" value={selected.bpm === '—' ? '' : selected.bpm} onChange={(event) => updateBeat({ bpm: event.target.value || '—' })} /></label><div className="field"><span>ТОНАЛЬНОСТЬ</span><KeyPicker value={selected.key} label="Тональность бита" onChange={(key) => updateBeat({ key })} onCommit={(value) => { const key = normalizeMusicKey(value); if (key !== null) updateBeat({ key: key || "—" }); else { updateBeat({ key: "—" }); notify("Не распознал тональность; выбери вариант из списка.") } }} /></div><label className="field"><span>ТЕГИ</span><input aria-label="Теги бита" value={selected.tags} onChange={(event) => updateBeat({ tags: event.target.value })} /></label></div>{!selected.isDemo && <label className="upload-zone cover-edit"><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void changeCover(event.target.files?.[0])} /><ImagePlus size={22} /><strong>Изменить обложку</strong><span>JPG, PNG или WEBP до 2 МБ</span></label>}<p className="detail-footnote">Подписи для площадок редактируются в разделе «Публикация». {selected.telegramSourceUrl ? 'Аудио доступно в исходном посте.' : selected.cloud ? 'MP3 и обложка хранятся в облаке.' : ''}</p>{!selected.isDemo && <div className="delete-beat">{cloudAvailable && !selected.cloud && <button onClick={migrateBeat} disabled={savingBeat}><UploadCloud size={16} /> {savingBeat ? 'Переносим…' : 'Перенести в облако'}</button>}{confirmDelete ? <><p>Удалить «{selected.title}» вместе с аудио и обложкой {selected.cloud ? 'из облака' : 'с этого устройства'}?</p><div><button onClick={() => setConfirmDelete(false)}>Отмена</button><button className="delete-beat-confirm" onClick={deleteBeat} disabled={deleting}>Подтвердить удаление</button></div></> : <button onClick={() => setConfirmDelete(true)}><Trash2 size={16} /> Удалить бит</button>}</div>}</div>}
+            {tab === 'data' && <div className="detail-section" key="data"><div className="section-intro"><h2>Данные записи</h2><p>Изменения сохраняются автоматически.</p></div><div className="data-card data-card--editable"><label className="field"><span>НАЗВАНИЕ</span><input aria-label="Название записи" maxLength={120} value={selected.title} onChange={(event) => updateBeat({ title: event.target.value })} /></label><label className="field"><span>ТЕМП (BPM)</span><input aria-label="Темп BPM" type="number" min="1" max="300" value={selected.bpm === '—' ? '' : selected.bpm} onChange={(event) => updateBeat({ bpm: event.target.value || '—' })} /></label><div className="field"><span>ТОНАЛЬНОСТЬ</span><KeyPicker value={selected.key} label="Тональность бита" onChange={(key) => updateBeat({ key })} onCommit={(value) => { const key = normalizeMusicKey(value); if (key !== null) updateBeat({ key: key || "—" }); else { updateBeat({ key: "—" }); notify("Не распознал тональность; выбери вариант из списка.") } }} /></div><label className="field"><span>ТЕГИ</span><input aria-label="Теги бита" value={selected.tags} onChange={(event) => updateBeat({ tags: event.target.value })} /></label></div>{!selected.isDemo && <label className="upload-zone cover-edit"><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void changeCover(event.target.files?.[0])} /><ImagePlus size={22} /><strong>Изменить обложку</strong><span>JPG, PNG или WEBP до 2 МБ</span></label>}<p className="detail-footnote">Подписи для площадок редактируются в разделе «Публикация». {selected.telegramSourceUrl ? 'Аудио доступно в исходном посте.' : selected.cloud ? 'MP3 и обложка хранятся в облаке.' : ''}</p>{!selected.isDemo && <div className="delete-beat">{cloudAvailable && !selected.cloud && <button onClick={migrateBeat} disabled={savingBeat}><UploadCloud size={16} /> {savingBeat ? 'Переносим…' : 'Перенести в облако'}</button>}{confirmDelete ? <><p>Удалить «{selected.title}» вместе с аудио и обложкой {selected.cloud ? 'из облака' : 'с этого устройства'}?</p><div><button onClick={() => setConfirmDelete(false)}>Отмена</button><button className="delete-beat-confirm" onClick={deleteBeat} disabled={deleting}>Подтвердить удаление</button></div></> : <button onClick={() => setConfirmDelete(true)}><Trash2 size={16} /> Удалить бит</button>}</div>}</div>}
             {tab === 'publications' && <PublicationHistory key={selected.id} beat={selected} channels={channels} focusedUrl={focusedPublication}
               stats={{ youtube: youtubeStats.stats, telegram: telegramStats.stats }} save={savePublicationLink}
               manageSchedule={cloudAvailable && selected.cloud ? manageYoutubeSchedule : undefined}

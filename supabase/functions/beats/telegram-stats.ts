@@ -3,7 +3,7 @@ import { Api, TelegramClient } from 'npm:telegram@2.26.22'
 import { StringSession } from 'npm:telegram@2.26.22/sessions/index.js'
 import { LogLevel } from 'npm:telegram@2.26.22/extensions/Logger.js'
 import bigInteger from 'npm:big-integer@1.6.52'
-import { channelForPublisher } from './telegram-publish.ts'
+import { channelForReader } from './telegram-publish.ts'
 import { dailyViews, publicationLinks } from './publication-history.ts'
 
 type PostStats = { views: number | null; reactions: number | null; comments: number | null; forwards: number | null }
@@ -71,7 +71,7 @@ export async function telegramStats(db: SupabaseClient, userId: number, beatId?:
   function canRead(channel: string) {
     const chatId = botChatId(channel)
     if (!connected.has(chatId)) return Promise.resolve(false)
-    const checked = access.get(channel) ?? channelForPublisher(chatId, userId).then(() => true, () => false)
+    const checked = access.get(channel) ?? channelForReader(chatId, userId).then(() => true, () => false)
     access.set(channel, checked)
     return checked
   }
