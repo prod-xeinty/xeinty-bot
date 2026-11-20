@@ -37,6 +37,11 @@ async function call<T>(initData: string, action: string, payload: Record<string,
   return response.json().catch(() => ({})) as Promise<T>
 }
 
+export async function loadTelegramAudioUrl(initData: string, beatId: string, signal: AbortSignal) {
+  const { grant } = await call<{ grant: string }>(initData, 'telegram-audio-grant', { beatId }, signal)
+  return projectUrl + '/functions/v1/beats/telegram-audio?' + new URLSearchParams({ grant })
+}
+
 export async function loadTelegramImportFile(initData: string, beatId: string, kind: 'audio' | 'cover') {
   try {
     const response = await requestBeatAction(initData, 'telegram-import-file', { beatId, kind }, AbortSignal.timeout(45_000))

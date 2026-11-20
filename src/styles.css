@@ -128,6 +128,10 @@ input, textarea { caret-color: #fff; }
 .beat-list { border-top: 1px solid #ffffff1c; }
 .beat-entry { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px; border-bottom: 1px solid #ffffff18; animation: item-enter 300ms var(--ease-enter) calc(140ms + min(var(--stagger, 0), 8) * 42ms) both; }
 .beat-entry:last-child { border-bottom: 0; }
+.record-actions { display: flex; align-items: center; gap: 4px; }
+.detail-audio { flex-wrap: wrap; }
+@media (prefers-reduced-motion: no-preference) { .player-play[aria-busy="true"] svg { animation: audio-spinner 850ms linear infinite; } }
+@keyframes audio-spinner { to { transform: rotate(360deg); } }
 .beat-row { width: 100%; min-height: 64px; display: flex; align-items: center; gap: 12px; padding: 8px 6px; border: 0; border-radius: 12px; background: none; color: #f5f5f4; text-align: left; transition: background var(--dur-control) var(--ease-press), transform var(--dur-control) var(--ease-press); }
 .beat-row:hover { background: #ffffff0d; }
 .beat-row:active { transform: scale(.99); }

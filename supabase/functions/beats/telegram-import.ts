@@ -37,7 +37,7 @@ function describe(post: Api.Message, base: string): AudioPost | null {
     url: base + '/' + post.id, group: post.groupedId?.toString() ?? null }
 }
 
-export async function telegramImportFile(db: SupabaseClient, userId: number, beatId: string, kind: 'audio' | 'cover', maxBytes: number) {
+async function telegramImportDocument(db: SupabaseClient, userId: number, beatId: string) {
   const { data: beat, error } = await db.from('beats').select('telegram_source_chat_id,telegram_source_message_id')
     .eq('id', beatId).eq('telegram_user_id', userId).maybeSingle()
   if (error) throw error
@@ -66,7 +66,26 @@ export async function telegramImportFile(db: SupabaseClient, userId: number, bea
       return fail('Исходный пост или аудио недоступны. Выбери файл с устройства.', 404)
     }
 
-    const document = post.media.document
+    return { bot, post, document: post.media.document }
+  } catch (failure) {
+    return failure instanceof TelegramPublishError
+      ? fail(failure.message + ' Можно открыть исходный пост в Telegram.', 403)
+      : fail('Не удалось получить доступ к исходному посту Telegram.', 502)
+  }
+}
+
+function importedAudioType(document: Api.Document) {
+  const name = document.attributes.find((attribute) => attribute instanceof Api.DocumentAttributeFilename)?.fileName ?? ''
+  if (/\.wav$/i.test(name) || /^audio\/(?:x-)?wav(?:e)?$/i.test(document.mimeType)) return 'audio/wav'
+  if (/\.mp3$/i.test(name) || document.mimeType === 'audio/mpeg' || document.mimeType === 'audio/mp3') return 'audio/mpeg'
+  return null
+}
+
+export async function telegramImportFile(db: SupabaseClient, userId: number, beatId: string, kind: 'audio' | 'cover', maxBytes: number) {
+  const source = await telegramImportDocument(db, userId, beatId)
+  if ('data' in source) return source
+  const { bot, post, document } = source
+  try {
     if (kind === 'cover') {
       const thumb = (document.thumbs ?? [])
         .filter((size) => (size instanceof Api.PhotoSize && size.size > 0 && size.size <= maxBytes) ||
@@ -81,10 +100,8 @@ export async function telegramImportFile(db: SupabaseClient, userId: number, bea
       return { bytes: Uint8Array.from(bytes), contentType: 'image/jpeg' }
     }
 
-    const name = document.attributes.find((attribute) => attribute instanceof Api.DocumentAttributeFilename)?.fileName ?? ''
-    const isWav = /\.(wav)$/i.test(name) || /^audio\/(?:x-)?wav(?:e)?$/i.test(document.mimeType)
-    const isMp3 = /\.mp3$/i.test(name) || document.mimeType === 'audio/mpeg' || document.mimeType === 'audio/mp3'
-    if (!isWav && !isMp3) return fail('Для сборки выбери аудио MP3 или WAV с устройства.', 415)
+    const contentType = importedAudioType(document)
+    if (!contentType) return fail('Для сборки выбери аудио MP3 или WAV с устройства.', 415)
     const size = Number(document.size.toString())
     if (!Number.isSafeInteger(size) || size < 1 || size > maxBytes) {
       return fail('Аудио из Telegram превышает лимит 15 МБ или недоступно. Выбери файл с устройства.', 413)
@@ -93,12 +110,24 @@ export async function telegramImportFile(db: SupabaseClient, userId: number, bea
     if (typeof bytes === 'string' || !bytes || bytes.length !== size) {
       return fail('Не удалось получить аудио целиком. Повтори попытку или выбери файл с устройства.', 502)
     }
-    return { bytes: Uint8Array.from(bytes), contentType: isWav ? 'audio/wav' : 'audio/mpeg' }
+    return { bytes: Uint8Array.from(bytes), contentType }
   } catch (failure) {
     return failure instanceof TelegramPublishError
       ? fail(failure.message + ' Можно выбрать файл с устройства.', 403)
       : fail('Не удалось загрузить файл из Telegram. Повтори попытку или выбери файл с устройства.', 502)
   }
+}
+
+export async function telegramAudioSource(db: SupabaseClient, userId: number, beatId: string, maxBytes: number) {
+  const source = await telegramImportDocument(db, userId, beatId)
+  if ('data' in source) return source
+  const contentType = importedAudioType(source.document)
+  if (!contentType) return fail('Плеер поддерживает MP3 и WAV. Открой исходный пост в Telegram.', 415)
+  const size = Number(source.document.size.toString())
+  if (!Number.isSafeInteger(size) || size < 1 || size > maxBytes) {
+    return fail('Этот файл недоступен в плеере. Открой исходный пост в Telegram.', 413)
+  }
+  return { ...source, contentType, size }
 }
 
 export async function telegramImport(db: SupabaseClient, userId: number, body: Record<string, unknown>): Promise<Result> {

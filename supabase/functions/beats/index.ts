@@ -1,6 +1,6 @@
 import { telegramPublication } from './telegram-attempts.ts'
 import { telegramImportSuggestions, telegramWebhook } from './telegram-updates.ts'
-// Deploy with verify_jwt = false: Telegram initData is verified below on every request.
+// Deploy with verify_jwt = false: Requests use Telegram initData or an expiring audio grant.
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { channelForReader, telegramChannelProfile, TelegramPublishError } from './telegram-publish.ts'
 
@@ -28,8 +28,8 @@ type BeatInput = {
 function responseHeaders(origin: string) {
   return {
     'access-control-allow-origin': origin,
-    'access-control-allow-methods': 'POST, OPTIONS',
-    'access-control-allow-headers': 'content-type, apikey, authorization',
+    'access-control-allow-methods': 'GET, HEAD, POST, OPTIONS',
+    'access-control-allow-headers': 'content-type, apikey, authorization, range',
     'vary': 'Origin',
   }
 }
@@ -136,9 +136,13 @@ Deno.serve(async (request) => {
   const origin = originFor(request)
   if (!origin) return new Response('Forbidden origin', { status: 403 })
   if (request.method === 'OPTIONS') return reply({}, 204, origin)
-  if (request.method !== 'POST') return reply({ error: 'Method not allowed' }, 405, origin)
-
   try {
+    if ((request.method === 'GET' || request.method === 'HEAD') && pathname.endsWith('/beats/telegram-audio')) {
+      const { streamTelegramAudio } = await import('./telegram-audio.ts')
+      return await streamTelegramAudio(request, client, maxAudioSize, new Headers(responseHeaders(origin)))
+    }
+    if (request.method !== 'POST') return reply({ error: 'Method not allowed' }, 405, origin)
+
     const body = await request.json()
     const userId = await telegramUserId(body.initData)
     if (!userId) return reply({ error: 'Открой XEINTY через Telegram заново' }, 401, origin)
@@ -189,6 +193,16 @@ Deno.serve(async (request) => {
     }
 
     if (action === 'telegram-import-suggestions') return reply(await telegramImportSuggestions(db, userId), 200, origin)
+
+    if (action === 'telegram-audio-grant') {
+      const { audioBeatId, issueTelegramAudioGrant } = await import('./telegram-audio.ts')
+      if (typeof body.beatId !== 'string' || !audioBeatId.test(body.beatId)) {
+        return reply({ error: 'Некорректный ID записи.' }, 400, origin)
+      }
+      const response = reply({ grant: await issueTelegramAudioGrant(userId, body.beatId) }, 200, origin)
+      response.headers.set('cache-control', 'private, no-store')
+      return response
+    }
 
     if (action === 'telegram-import-file') {
       const { beatId, kind } = body
