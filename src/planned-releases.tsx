@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { CalendarDays, ChevronRight, Play, RefreshCw } from 'lucide-react'
 import type { StoredBeat } from './beat-store'
+import { BeatSearch, matchBeats } from './beat-library'
 import { getBeatPublications } from './publication-history'
 
-type ReleaseBeat = Pick<StoredBeat, 'id' | 'title' | 'telegramLink' | 'youtubeLink' | 'youtubePublishAt' | 'publications'> & {
+type ReleaseBeat = Pick<StoredBeat, 'id' | 'title' | 'bpm' | 'key' | 'tags' | 'audioName' | 'telegramLink' | 'youtubeLink' | 'youtubePublishAt' | 'publications'> & {
   coverUrl?: string; isDemo?: boolean
 }
 
@@ -17,6 +18,7 @@ export function PlannedReleases({ beats, openRelease, openComposer, refresh }: {
   refresh?: (links: { url: string; publishAt: string }[]) => Promise<{ changed: number; unavailable: number }>
 }) {
   const [now, setNow] = useState(Date.now)
+  const [query, setQuery] = useState('')
   const [checking, setChecking] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -26,17 +28,24 @@ export function PlannedReleases({ beats, openRelease, openComposer, refresh }: {
     return () => window.clearInterval(timer)
   }, [])
 
-  const releases = beats.filter((beat) => !beat.isDemo).flatMap((beat) => getBeatPublications(beat).flatMap((post) => {
-    if (post.platform !== 'youtube' || !post.publishAt) return []
-    const time = Date.parse(post.publishAt)
-    return time > now ? [{ beat, url: post.url, publishAt: post.publishAt, time }] : []
-  })).sort((a, b) => a.time - b.time)
+  const releasesByUrl = new Map<string, { beat: ReleaseBeat; url: string; publishAt: string; time: number }>()
+  for (const beat of beats) {
+    if (beat.isDemo) continue
+    for (const post of getBeatPublications(beat)) {
+      if (post.platform !== 'youtube' || !post.publishAt || releasesByUrl.has(post.url)) continue
+      const time = Date.parse(post.publishAt)
+      if (Number.isFinite(time)) releasesByUrl.set(post.url, { beat, url: post.url, publishAt: post.publishAt, time })
+    }
+  }
+  const releases = [...releasesByUrl.values()].sort((a, b) => a.time - b.time)
+  const matched = new Set(matchBeats(beats, query).map(({ id }) => id))
   const byDay = new Map<string, typeof releases>()
-  const seen = new Set<string>()
-  for (const release of releases) {
-    if (seen.has(release.url)) continue
-    seen.add(release.url)
-    const day = dayFormat.format(release.time)
+  const upcoming = releases.filter(({ time }) => time > now)
+  const elapsed = releases.filter(({ time }) => time <= now).reverse()
+  for (const release of [...upcoming, ...elapsed]) {
+    if (!matched.has(release.beat.id)) continue
+    const date = dayFormat.format(release.time)
+    const day = release.time > now ? date : date + ' · Время выхода прошло'
     const group = byDay.get(day) ?? []
     group.push(release)
     byDay.set(day, group)
@@ -49,7 +58,7 @@ export function PlannedReleases({ beats, openRelease, openComposer, refresh }: {
     setError('')
     setMessage('')
     try {
-      const { changed, unavailable } = await refresh([...byDay.values()].flat().map(({url, publishAt}) => ({url, publishAt})))
+      const { changed, unavailable } = await refresh(releases.map(({ url, publishAt }) => ({ url, publishAt })))
       const results = [changed ? 'Обновлено видео: ' + changed : '', unavailable ? 'Не удалось проверить: ' + unavailable : ''].filter(Boolean)
       setMessage(results.join(' · ') || 'Расписание совпадает с YouTube.')
       setNow(Date.now())
@@ -58,8 +67,8 @@ export function PlannedReleases({ beats, openRelease, openComposer, refresh }: {
     } finally { inFlight.current = false; setChecking(false) }
   }
 
-  return <section className="planned-releases" aria-label="Предстоящие релизы YouTube">
-    {byDay.size > 0 && <div className="planned-releases-head">
+  return <section className="planned-releases" aria-label="Расписание релизов YouTube">
+    {releases.length > 0 && <div className="planned-releases-head">
       <div className="section-intro">
         <h2>Расписание YouTube</h2>
         <p>Время по часовому поясу устройства · {Intl.DateTimeFormat().resolvedOptions().timeZone}</p>
@@ -68,9 +77,14 @@ export function PlannedReleases({ beats, openRelease, openComposer, refresh }: {
         <RefreshCw size={15} aria-hidden="true" /> {checking ? 'Сверяем…' : 'Сверить с YouTube'}
       </button>}
     </div>}
+    {releases.length > 0 && <div className="planned-releases-head">
+      <BeatSearch label="Поиск по расписанию" value={query} onChange={setQuery} />
+      <span className="form-hint" role="status">Предстоящие: {upcoming.length}{elapsed.length > 0 && ' · Время выхода прошло: ' + elapsed.length}</span>
+    </div>}
     {message && <p className="planned-refresh-note form-hint" role="status">{message}</p>}
     {error && <p className="planned-refresh-note video-error" role="alert">{error}</p>}
-    {!byDay.size && <div className="publish-empty planned-empty">
+    {releases.length > 0 && !byDay.size && <p className="form-hint" role="status">По этому запросу релизы не найдены.</p>}
+    {!releases.length && <div className="publish-empty planned-empty">
       <CalendarDays size={25} aria-hidden="true" />
       <strong>Запланированных релизов пока нет</strong>
       <p>Загрузи видео на YouTube и выбери дату выхода.</p>
