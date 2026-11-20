@@ -36,7 +36,7 @@ export function usePlatformStats(platform: StatsPlatform, initData?: string, act
   return { stats, error, loading, refresh: () => setRevision((value) => value + 1) }
 }
 
-type StatsState = ReturnType<typeof usePlatformStats>
+export type StatsState = ReturnType<typeof usePlatformStats>
 type LinkedBeat = Pick<StoredBeat, 'id' | 'title' | 'bpm' | 'key' | 'tags' | 'audioName' | 'youtubeLink' | 'youtubePublishAt' | 'telegramLink' | 'publications'> & { cloud?: boolean; coverUrl?: string }
 const platformNames = { youtube: 'YouTube', telegram: 'Telegram' }
 const metricLabels = { views: 'Просмотры', likes: 'Лайки', reactions: 'Реакции', comments: 'Комментарии', forwards: 'Пересылки' }

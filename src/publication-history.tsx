@@ -4,13 +4,15 @@ import { Dropdown } from './choice-menu'
 import { YoutubeReleaseTime } from './youtube-upload'
 import { YoutubeScheduleEditor } from './youtube-schedule'
 import type { BeatPublication, StoredBeat } from './beat-store'
-import type { PlatformStats, StatsPlatform, TelegramChannel, YoutubeScheduleResult } from './cloud-beats'
+import type { StatsState } from './platform-stats'
+import type { StatsPlatform, TelegramChannel, YoutubeScheduleResult } from './cloud-beats'
 
 type PublicationSource = Pick<StoredBeat, 'telegramLink' | 'youtubeLink' | 'youtubePublishAt' | 'publications'>
 const names = { telegram: 'Telegram', youtube: 'YouTube' }
 const visibilityNames = new Map([['public', 'Открытое'], ['unlisted', 'По ссылке'], ['private', 'Приватное']])
 const dates = new Intl.DateTimeFormat('ru-RU', {dateStyle: 'medium', timeStyle: 'short'})
 const numbers = new Intl.NumberFormat('ru-RU')
+const statsTime = new Intl.DateTimeFormat('ru-RU', { dateStyle: 'short', timeStyle: 'short' })
 
 export function getBeatPublications(beat: PublicationSource) {
   const posts = [...(beat.publications ?? [])]
@@ -60,7 +62,7 @@ function channelName(post: BeatPublication, channels: TelegramChannel[]) {
 
 export function PublicationHistory({ beat, channels, stats, save, openPublication, manageSchedule, openChannels, focusedUrl }: {
   beat: PublicationSource & { id: string; isDemo?: boolean }; channels: TelegramChannel[];
-  stats: Record<StatsPlatform, PlatformStats | undefined>;
+  stats?: Record<StatsPlatform, StatsState>;
   save: (platform: StatsPlatform, url: string) => Promise<void>; openPublication: () => void;
   manageSchedule?: (url: string, expectedPublishAt: string, publishAt: string | null) => Promise<YoutubeScheduleResult>;
   openChannels: () => void; focusedUrl?: string
@@ -70,6 +72,10 @@ export function PublicationHistory({ beat, channels, stats, save, openPublicatio
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const posts = getBeatPublications(beat)
+  const publicationStats = stats
+    ? [...new Set(posts.map((post) => post.platform))].map((platform) => ({ platform, state: stats[platform] }))
+    : []
+  const refreshingStats = publicationStats.some(({ state }) => state.loading)
   const focused = useRef<HTMLLIElement>(null)
   useEffect(() => {
     if (!focusedUrl) return
@@ -98,7 +104,7 @@ export function PublicationHistory({ beat, channels, stats, save, openPublicatio
       <p className="form-hint">У этого бита пока нет публикаций.</p>
       <button type="button" className="outline-button" onClick={openPublication}>К публикации</button>
     </div> : <ul className="history-list">{posts.map((post) => {
-      const metrics = stats[post.platform]?.entries.find((entry) => entry.beatId === beat.id && entry.link === post.url)
+      const metrics = stats?.[post.platform].stats?.entries.find((entry) => entry.beatId === beat.id && entry.link === post.url)
       const href = postUrl(post.url, post.platform)
       const channel = metrics?.channel ?? (href ? channelName(post, channels) : '')
       const scheduled = post.publishAt && Date.parse(post.publishAt) > Date.now()
@@ -131,6 +137,20 @@ export function PublicationHistory({ beat, channels, stats, save, openPublicatio
         </div>}
       </li>
     })}</ul>}
+    {publicationStats.length > 0 && <>
+      <div className="youtube-stats-actions">
+        <button type="button" className="outline-button" disabled={refreshingStats}
+          onClick={() => publicationStats.forEach(({ state }) => state.refresh())}>
+          {refreshingStats ? 'Обновляем статистику…' : 'Обновить статистику'}
+        </button>
+        {publicationStats.map(({ platform, state }) => state.stats && <small key={platform} role="status">
+          {names[platform]} · замер <time dateTime={state.stats.fetchedAt}>{statsTime.format(Date.parse(state.stats.fetchedAt))}</time>
+        </small>)}
+      </div>
+      {publicationStats.map(({ platform, state }) => state.error && <p key={platform} className="video-error" role="alert">
+        {names[platform]} · {state.error}
+      </p>)}
+    </>}
     {!beat.isDemo && <form className="links-panel history-add" onSubmit={submit}>
       <h3>Добавить ссылку</h3>
       <Dropdown label="Площадка" value={platform} options={[{value:'telegram',label:'Telegram'},{value:'youtube',label:'YouTube'}]}
