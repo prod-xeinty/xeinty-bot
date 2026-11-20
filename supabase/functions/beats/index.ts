@@ -25,16 +25,19 @@ type BeatInput = {
   youtubeLink: string
 }
 
+function responseHeaders(origin: string) {
+  return {
+    'access-control-allow-origin': origin,
+    'access-control-allow-methods': 'POST, OPTIONS',
+    'access-control-allow-headers': 'content-type, apikey, authorization',
+    'vary': 'Origin',
+  }
+}
+
 function reply(data: unknown, status = 200, origin = allowedOrigin): Response {
   return new Response(status === 204 ? null : JSON.stringify(data), {
     status,
-    headers: {
-      'content-type': 'application/json; charset=utf-8',
-      'access-control-allow-origin': origin,
-      'access-control-allow-methods': 'POST, OPTIONS',
-      'access-control-allow-headers': 'content-type, apikey, authorization',
-      'vary': 'Origin',
-    },
+    headers: { ...responseHeaders(origin), 'content-type': 'application/json; charset=utf-8' },
   })
 }
 
@@ -186,6 +189,23 @@ Deno.serve(async (request) => {
     }
 
     if (action === 'telegram-import-suggestions') return reply(await telegramImportSuggestions(db, userId), 200, origin)
+
+    if (action === 'telegram-import-file') {
+      const { beatId, kind } = body
+      if (typeof beatId !== 'string' || !/^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i.test(beatId) ||
+        (kind !== 'audio' && kind !== 'cover')) {
+        return reply({ error: 'Некорректный запрос файла.' }, 400, origin)
+      }
+      const { telegramImportFile } = await import('./telegram-import.ts')
+      const file = await telegramImportFile(db, userId, beatId, kind, kind === 'audio' ? maxAudioSize : maxCoverSize)
+      if ('data' in file) return reply(file.data, file.status ?? 502, origin)
+      return new Response(file.bytes.buffer, { headers: {
+        ...responseHeaders(origin),
+        'content-type': file.contentType,
+        'cache-control': 'private, no-store',
+        'x-content-type-options': 'nosniff',
+      } })
+    }
 
     if (action === 'telegram-import-preview' || action === 'telegram-import-save') {
       const { telegramImport } = await import('./telegram-import.ts')
