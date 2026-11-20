@@ -138,15 +138,29 @@ Deno.serve(async (request) => {
     if (!userId) return reply({ error: 'Открой XEINTY через Telegram заново' }, 401, origin)
     const db = client()
     const action = body.action
+    if ((action === 'youtube-stats' || action === 'telegram-stats') && body.beatId != null &&
+        (typeof body.beatId !== 'string' || !/^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i.test(body.beatId))) {
+      return reply({ error: 'Некорректный ID бита.' }, 400, origin)
+    }
     if (typeof action === 'string' && action.startsWith('youtube-')) {
       const result = await youtubeAction(db, userId, body)
       return reply(result.data, result.status ?? 200, origin)
     }
 
     if (action === 'list') {
-      const { data, error } = await db.from('beats').select('*,beat_publications(platform,url,saved_at,publish_at)').eq('telegram_user_id', userId).order('created_at', { ascending: false }).limit(200)
+      const pageSize = 200
+      const cursor = body.cursor
+      if (cursor != null && (typeof cursor !== 'object' || typeof cursor.createdAt !== 'string' ||
+          !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,6})?(?:Z|\+00:00)$/.test(cursor.createdAt) ||
+          typeof cursor.id !== 'string' || !/^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i.test(cursor.id))) {
+        return reply({ error: 'Обнови библиотеку и попробуй ещё раз.' }, 400, origin)
+      }
+      let query = db.from('beats').select('*,beat_publications(platform,url,saved_at,publish_at)').eq('telegram_user_id', userId)
+      if (cursor) query = query.or('created_at.lt.' + cursor.createdAt + ',and(created_at.eq.' + cursor.createdAt + ',id.lt.' + cursor.id + ')')
+      const { data, error } = await query.order('created_at', { ascending: false }).order('id', { ascending: false }).limit(pageSize + 1)
       if (error) throw error
-      const beats = await Promise.all((data ?? []).map(async (beat) => {
+      const page = (data ?? []).slice(0, pageSize)
+      const beats = await Promise.all(page.map(async (beat) => {
         const [audio, cover] = await Promise.all([
           beat.audio_path ? db.storage.from(bucket).createSignedUrl(beat.audio_path, 3600) : Promise.resolve({ data: null, error: null }),
           beat.cover_path ? db.storage.from(bucket).createSignedUrl(beat.cover_path, 3600) : Promise.resolve({ data: null, error: null }),
@@ -155,7 +169,7 @@ Deno.serve(async (request) => {
           id: beat.id, createdAt: Date.parse(beat.created_at), title: beat.title,
           bpm: beat.bpm, key: beat.musical_key, tags: beat.tags, status: beat.status,
           audioName: beat.audio_name, audioUrl: audio.data?.signedUrl,
-          coverUrl: cover.data?.signedUrl,
+          coverUrl: cover.data?.signedUrl, telegramSourceUrl: beat.telegram_source_url, telegramSourceDate: beat.telegram_source_date,
           telegramCaption: beat.telegram_caption, youtubeDescription: beat.youtube_description,
           youtubeKeywords: beat.youtube_keywords, telegramLink: beat.telegram_link,
           youtubeLink: beat.youtube_link, youtubePublishAt: beat.youtube_publish_at,
@@ -164,13 +178,20 @@ Deno.serve(async (request) => {
           })),
         }
       }))
-      return reply({ beats }, 200, origin)
+      const last = data && data.length > pageSize ? page.at(-1) : undefined
+      return reply({ beats, next: last ? { id: last.id, createdAt: last.created_at } : null }, 200, origin)
+    }
+
+    if (action === 'telegram-import-preview' || action === 'telegram-import-save') {
+      const { telegramImport } = await import('./telegram-import.ts')
+      const result = await telegramImport(db, userId, body)
+      return reply(result.data, result.status ?? 200, origin)
     }
 
     if (action === 'telegram-stats') {
       try {
         const { telegramStats } = await import('./telegram-stats.ts')
-        return reply(await telegramStats(db, userId), 200, origin)
+        return reply(await telegramStats(db, userId, body.beatId ?? undefined), 200, origin)
       } catch {
         return reply({ error: 'Не удалось получить статистику Telegram. Попробуй обновить позже.' }, 502, origin)
       }

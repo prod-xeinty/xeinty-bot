@@ -41,9 +41,22 @@ async function signedUpload(path: string, token: string, file: File): Promise<vo
   if (!response.ok) throw new Error(`Не удалось загрузить ${file.name}`)
 }
 
-export async function loadCloudBeats(initData: string, signal?: AbortSignal): Promise<CloudBeat[]> {
-  const result = await call<{ beats: CloudBeat[] }>(initData, 'list', {}, signal)
-  return result.beats.map((beat) => ({ ...beat, cloud: true }))
+export type BeatCursor = { id: string; createdAt: string }
+
+export async function loadCloudBeats(initData: string, signal?: AbortSignal, cursor?: BeatCursor) {
+  const result = await call<{ beats: CloudBeat[]; next?: BeatCursor | null }>(initData, 'list', { cursor }, signal)
+  return { beats: result.beats.map((beat) => ({ ...beat, cloud: true as const })), next: result.next ?? null }
+}
+
+export type TelegramImportTrack = { id: number; name: string; title: string; date: string; url: string; group: string | null; exists: boolean }
+export type TelegramImportPreview = { tracks: TelegramImportTrack[]; next: number | null; scanned: number; total: number }
+
+export function previewTelegramImport(initData: string, channel: string, first: string, last: string, cursor?: number) {
+  return call<TelegramImportPreview>(initData, 'telegram-import-preview', { channel, first, last, cursor })
+}
+
+export function saveTelegramImport(initData: string, channel: string, ids: number[]) {
+  return call<{ added: number; skipped: number; savedIds: number[] }>(initData, 'telegram-import-save', { channel, ids })
 }
 
 export async function createCloudBeat(initData: string, beat: StoredBeat, audio: File, cover?: File): Promise<string> {
@@ -132,8 +145,8 @@ export type PlatformStats = {
   series?: { day: string; views: number }[] | null
 }
 
-export function loadPlatformStats(initData: string, platform: StatsPlatform, signal: AbortSignal) {
-  return call<PlatformStats>(initData, platform + '-stats', {}, signal)
+export function loadPlatformStats(initData: string, platform: StatsPlatform, signal: AbortSignal, beatId?: string) {
+  return call<PlatformStats>(initData, platform + '-stats', { beatId }, signal)
 }
 
 export function loadYoutubeChannelProfile(initData: string) {

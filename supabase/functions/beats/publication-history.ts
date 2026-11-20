@@ -2,10 +2,11 @@ import type { SupabaseClient } from 'npm:@supabase/supabase-js@2'
 
 export type Platform = 'youtube' | 'telegram'
 
-export async function publicationLinks(db: SupabaseClient, userId: number, platform: Platform) {
-  const { data, error } = await db.from('beats')
+export async function publicationLinks(db: SupabaseClient, userId: number, platform: Platform, beatId?: string) {
+  const query = db.from('beats')
     .select('id,telegram_link,youtube_link,beat_publications(platform,url)')
-    .eq('telegram_user_id', userId).order('created_at', { ascending: false }).limit(200)
+    .eq('telegram_user_id', userId)
+  const { data, error } = await (beatId ? query.eq('id', beatId) : query.order('created_at', { ascending: false }).limit(200))
   if (error) throw error
   return (data ?? []).flatMap((beat) => {
     const latest = platform === 'youtube' ? beat.youtube_link : beat.telegram_link

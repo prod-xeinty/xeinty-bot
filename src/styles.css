@@ -812,3 +812,24 @@ input, textarea { caret-color: #fff; }
 .batch-preview-caption a { color: #f4f4f2; text-decoration: underline; text-underline-offset: 3px; }
 .batch-preview-limit { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 0 10px; }
 .batch-preview-limit span { font-variant-numeric: tabular-nums; }
+
+.import-invite { margin-bottom: 20px; }
+.import-invite .section-intro { margin-bottom: 12px; }
+.import-links, .import-results { display: grid; gap: 12px; }
+.import-links > button, .import-results > button { justify-self: start; }
+.import-links p, .import-actions p { margin: 0; }
+.import-fields { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.import-fields input { min-width: 0; }
+.import-results { margin-top: 18px; padding-top: 14px; border-top: 1px solid #ffffff20; }
+.import-results .batch-library-head { flex-wrap: wrap; }
+.import-track-list { display: grid; gap: 6px; max-height: 390px; margin: 0; padding: 0; overflow: auto; list-style: none; }
+.import-track-list label { display: grid; grid-template-columns: 18px 17px minmax(0, 1fr); align-items: center; gap: 9px; min-height: 48px; padding: 6px 9px; border: 1px solid #ffffff1c; border-radius: 9px; background: #141415; cursor: pointer; }
+.import-track-list label:hover { background: #212123; }
+.import-track-list input { margin: 0; accent-color: #e2e2e2; }
+.import-track-list label > span { display: grid; gap: 3px; min-width: 0; overflow-wrap: anywhere; }
+.import-track-list strong { font-size: 13px; }
+.import-track-list small { color: #b8b8b8; font-size: 11px; }
+.import-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.import-panel > .import-actions { margin-top: 14px; }
+.library-more { margin-top: 10px; }
+@media(max-width: 470px) { .import-fields { grid-template-columns: minmax(0, 1fr); } }
