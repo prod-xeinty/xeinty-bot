@@ -9,8 +9,8 @@ const keyPattern = new RegExp(
   'giu',
 )
 const explicitTempo = /(?<![\p{L}\p{N}])(?<!\d[.,])(\d{2,3})[ \t]*(?:bpm|бпм)(?![\p{L}\p{N}])|(?<![\p{L}\p{N}])(?:bpm|бпм|tempo|темп)[ \t]*[:=—–-]?[ \t]*(\d{2,3})(?![\p{L}\p{N}]|[.,]\d)/giu
-const tempoBeforeKey = /(?<![\p{L}\p{N}])(?<!\d[.,])(\d{2,3})[ \t,:/|·—–-]{1,9}$/u
-const tempoAfterKey = /^[ \t,:/|·—–-]{1,9}(\d{2,3})(?![\p{L}\p{N}]|[.,]\d)/u
+const tempoBeforeKey = /(?<![\p{L}\p{N}])(?<!\d[.,])(\d{2,3})(?:[ \t]*(?:bpm|бпм))?[ \t,:/|·—–-]{1,9}$/iu
+const tempoAfterKey = /^[ \t,:/|·—–-]{1,9}(\d{2,3})(?:[ \t]*(?:bpm|бпм))?(?![\p{L}\p{N}]|[.,]\d)/iu
 
 function tempo(value?: string) {
   if (!value) return ''
@@ -30,15 +30,15 @@ function extract(value: string) {
   for (const match of text.matchAll(keyPattern)) {
     const { labelled, unlabelled } = match.groups ?? {}
     const token = labelled ?? unlabelled
-    // A compact key with a lowercase note can be an ordinary word, such as "am".
-    if (!token || (!labelled && /^[a-g]m$/i.test(token) && !/^[A-G]m$/.test(token))) continue
+    if (!token) continue
+    const before = tempo(tempoBeforeKey.exec(text.slice(0, match.index))?.[1])
+    const after = tempo(tempoAfterKey.exec(text.slice(match.index + match[0].length))?.[1])
+    // A nearby tempo disambiguates compact lowercase keys such as "fm" and "am".
+    if (!labelled && /^[a-g]m$/i.test(token) && !/^[A-G]m$/.test(token) && !before && !after) continue
     const key = normalizeMusicKey(token)
     if (!key) continue
     keys.push(key)
-    paired.push(
-      tempo(tempoBeforeKey.exec(text.slice(0, match.index))?.[1]),
-      tempo(tempoAfterKey.exec(text.slice(match.index + match[0].length))?.[1]),
-    )
+    paired.push(before, after)
   }
   const explicit = [...text.matchAll(explicitTempo)].map((match) => tempo(match[1] ?? match[2])).filter(Boolean)
   return { bpm: single(explicit.length ? explicit : paired), key: single(keys) }
