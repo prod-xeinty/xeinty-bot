@@ -17,7 +17,7 @@ import { getTelegramWebApp } from './telegram'
 import { makeStaticVideo, videoProfileLabel, type VideoStage } from './video'
 import { saveVideoFile } from './save-video'
 import { deleteStoredBeat, loadStoredBeats, saveBeatCover, saveBeatMetadata, saveNewBeat, type StoredBeat } from './beat-store'
-import { changeYoutubeSchedule, refreshYoutubeSchedule, cloudConfigured, connectTelegramChannel, disconnectTelegramChannel, loadTelegramChannels, loadTelegramImportSuggestions, type TelegramImportSuggestion, type BeatCursor, type TelegramChannel, type TelegramPublication, type PublicationLinks, createCloudBeat, deleteCloudBeat, loadCloudBeats, publishCloudTelegram, remoteFile, replaceCloudCover, updateCloudBeat } from './cloud-beats'
+import { changeYoutubeSchedule, refreshYoutubeSchedule, cloudConfigured, connectTelegramChannel, disconnectTelegramChannel, loadTelegramChannels, loadTelegramImportFile, loadTelegramImportSuggestions, type TelegramImportSuggestion, type BeatCursor, type TelegramChannel, type TelegramPublication, type PublicationLinks, createCloudBeat, deleteCloudBeat, loadCloudBeats, publishCloudTelegram, remoteFile, replaceCloudCover, updateCloudBeat } from './cloud-beats'
 import { normalizeMusicKey } from './music-key'
 import { detectTelegramAudioMetadata } from '../supabase/functions/beats/audio-metadata'
 import { Dropdown, KeyPicker } from './choice-menu'
@@ -143,6 +143,7 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
   const selected = beats.find((beat) => beat.id === selectedId) ?? beats[0]
   const latest = beats[0]
   const temporaryVideoInputs = videoInputs?.beatId === selected.id ? videoInputs : undefined
+  const telegramVideoSession = selected.cloud && selected.telegramSourceUrl ? webApp?.initData : undefined
   const needsVideoAudio = !selected.audioFile && !selected.audioUrl
   const needsVideoCover = !selected.coverFile && !selected.coverUrl
   const hasVideoAudio = !needsVideoAudio || Boolean(temporaryVideoInputs?.audio)
@@ -668,7 +669,7 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
 
   async function createVideo() {
     if (videoStage) return
-    if (missingVideoFiles) {
+    if (missingVideoFiles && !telegramVideoSession) {
       setVideoError('')
       setVideoFileHintId(selected.id)
       return
@@ -678,8 +679,15 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
     setVideoStage('preparing')
     const started = performance.now()
     try {
-      const audio = selected.audioFile ?? (needsVideoAudio ? temporaryVideoInputs?.audio : undefined) ?? await remoteFile(selected.audioUrl!, selected.audioName ?? 'preview.mp3')
-      const cover = selected.coverFile ?? (needsVideoCover ? temporaryVideoInputs?.cover : undefined) ?? await remoteFile(selected.coverUrl!, 'cover.jpg')
+      async function resolveVideoFile(kind: 'audio' | 'cover', local: File | undefined, url: string | undefined, name: string) {
+        if (local) return local
+        if (url) return remoteFile(url, name)
+        if (temporaryVideoInputs?.[kind]) return temporaryVideoInputs[kind]
+        if (telegramVideoSession) return loadTelegramImportFile(telegramVideoSession, selected.id, kind)
+        throw new Error('Выбери недостающие файлы с устройства.')
+      }
+      const cover = await resolveVideoFile('cover', selected.coverFile, selected.coverUrl, 'cover.jpg')
+      const audio = await resolveVideoFile('audio', selected.audioFile, selected.audioUrl, selected.audioName ?? 'preview.mp3')
       const blob = await makeStaticVideo(audio, cover, setVideoStage)
       if (videoUrlRef.current) URL.revokeObjectURL(videoUrlRef.current)
       const url = URL.createObjectURL(blob)
@@ -939,7 +947,9 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
                   options={[{ value: 'generated', label: 'Собрать видео в XEINTY' }, { value: 'own', label: 'Приложить своё видео' }]} />
                 {videoSource === 'own' ? <OwnYoutubeVideo key={selected.id} file={selectedOwnVideo} onChange={(file) => setOwnVideo(file ? { beatId: selected.id, file } : undefined)} /> : <>
                   {(needsVideoAudio || needsVideoCover) && <div className="video-file-hint" key={selected.id}>
-                    <p className="form-hint">Файлы с устройства используются только для сборки видео.</p>
+                    <p className="form-hint">{telegramVideoSession && (!hasVideoAudio || !hasVideoCover)
+                      ? 'При сборке XEINTY попробует получить недостающие файлы из Telegram. Можно выбрать их с устройства.'
+                      : 'Файлы с устройства используются только для сборки видео.'}</p>
                     {needsVideoAudio && !hasVideoAudio && selected.telegramSourceUrl && sourcePostLink(selected.telegramSourceUrl)}
                     <div className="upload-grid">
                       {needsVideoAudio && <label className="upload-zone">

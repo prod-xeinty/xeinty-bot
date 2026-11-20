@@ -17,7 +17,7 @@ export function cloudConfigured(): boolean {
   return Boolean(projectUrl && publishableKey)
 }
 
-async function call<T>(initData: string, action: string, payload: Record<string, unknown> = {}, signal?: AbortSignal): Promise<T> {
+async function requestBeatAction(initData: string, action: string, payload: Record<string, unknown>, signal?: AbortSignal) {
   if (!projectUrl || !publishableKey) throw new Error('Облако ещё не подключено')
   const response = await fetch(`${projectUrl}/functions/v1/beats`, {
     method: 'POST',
@@ -25,9 +25,30 @@ async function call<T>(initData: string, action: string, payload: Record<string,
     headers: { 'content-type': 'application/json', apikey: publishableKey },
     body: JSON.stringify({ initData, action, ...payload }),
   })
-  const result = await response.json().catch(() => ({})) as { error?: string }
-  if (!response.ok) throw Object.assign(new Error(result.error || `Ошибка облака (${response.status})`), { status: response.status })
-  return result as T
+  if (!response.ok) {
+    const result = await response.json().catch(() => ({})) as { error?: string }
+    throw Object.assign(new Error(result.error || `Ошибка облака (${response.status})`), { status: response.status })
+  }
+  return response
+}
+
+async function call<T>(initData: string, action: string, payload: Record<string, unknown> = {}, signal?: AbortSignal): Promise<T> {
+  const response = await requestBeatAction(initData, action, payload, signal)
+  return response.json().catch(() => ({})) as Promise<T>
+}
+
+export async function loadTelegramImportFile(initData: string, beatId: string, kind: 'audio' | 'cover') {
+  try {
+    const response = await requestBeatAction(initData, 'telegram-import-file', { beatId, kind }, AbortSignal.timeout(45_000))
+    const blob = await response.blob()
+    const name = kind === 'cover' ? 'telegram-cover.jpg' : blob.type === 'audio/wav' ? 'telegram-audio.wav' : 'telegram-audio.mp3'
+    return new File([blob], name, { type: blob.type })
+  } catch (failure) {
+    if (failure instanceof TypeError || (failure instanceof DOMException && failure.name === 'TimeoutError')) {
+      throw new Error('Не удалось получить файл из Telegram. Повтори попытку или выбери файл с устройства.')
+    }
+    throw failure
+  }
 }
 
 async function signedUpload(path: string, token: string, file: File): Promise<void> {

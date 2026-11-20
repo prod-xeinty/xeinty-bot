@@ -37,6 +37,70 @@ function describe(post: Api.Message, base: string): AudioPost | null {
     url: base + '/' + post.id, group: post.groupedId?.toString() ?? null }
 }
 
+export async function telegramImportFile(db: SupabaseClient, userId: number, beatId: string, kind: 'audio' | 'cover', maxBytes: number) {
+  const { data: beat, error } = await db.from('beats').select('telegram_source_chat_id,telegram_source_message_id')
+    .eq('id', beatId).eq('telegram_user_id', userId).maybeSingle()
+  if (error) throw error
+  const channel = beat?.telegram_source_chat_id
+  const messageId = beat?.telegram_source_message_id
+  if (typeof channel !== 'string' || !/^-100\d{5,16}$/.test(channel) || !validId(messageId)) {
+    return fail('У записи нет доступного источника в Telegram.', 404)
+  }
+  const { data: connected, error: connectionError } = await db.from('telegram_channels').select('chat_id')
+    .eq('telegram_user_id', userId).eq('chat_id', channel).maybeSingle()
+  if (connectionError) throw connectionError
+  if (!connected) return fail('Подключи исходный канал или выбери файл с устройства.', 403)
+
+  try {
+    const chat = await channelForReader(channel, userId)
+    if (String(chat.id) !== channel) return fail('Исходный канал изменился.', 403)
+    const numeric = String(-1_000_000_000_000 - chat.id)
+    const bot = await getBot()
+    const peer = await bot.getInputEntity(chat.username ?? new Api.PeerChannel({ channelId: bigInteger(numeric) }))
+    if (!(peer instanceof Api.InputPeerChannel) || peer.channelId.toString() !== numeric) {
+      return fail('Исходный канал изменился.', 403)
+    }
+    const [post] = await bot.getMessages(peer, { ids: [messageId] })
+    if (!(post instanceof Api.Message) || post.id !== messageId || !(post.media instanceof Api.MessageMediaDocument) ||
+      !(post.media.document instanceof Api.Document) || !describe(post, '')) {
+      return fail('Исходный пост или аудио недоступны. Выбери файл с устройства.', 404)
+    }
+
+    const document = post.media.document
+    if (kind === 'cover') {
+      const thumb = (document.thumbs ?? [])
+        .filter((size) => (size instanceof Api.PhotoSize && size.size > 0 && size.size <= maxBytes) ||
+          (size instanceof Api.PhotoCachedSize && size.bytes.length > 0 && size.bytes.length <= maxBytes))
+        .sort((a, b) => ('w' in b ? b.w : 0) - ('w' in a ? a.w : 0))[0]
+      if (!thumb || !('type' in thumb)) return fail('В аудио Telegram нет обложки. Выбери изображение с устройства.', 404)
+      const bytes = await bot.downloadMedia(post, { thumb })
+      if (typeof bytes === 'string' || !bytes || bytes.length > maxBytes ||
+        bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes[2] !== 0xff) {
+        return fail('Обложка Telegram недоступна. Выбери изображение с устройства.', 404)
+      }
+      return { bytes: Uint8Array.from(bytes), contentType: 'image/jpeg' }
+    }
+
+    const name = document.attributes.find((attribute) => attribute instanceof Api.DocumentAttributeFilename)?.fileName ?? ''
+    const isWav = /\.(wav)$/i.test(name) || /^audio\/(?:x-)?wav(?:e)?$/i.test(document.mimeType)
+    const isMp3 = /\.mp3$/i.test(name) || document.mimeType === 'audio/mpeg' || document.mimeType === 'audio/mp3'
+    if (!isWav && !isMp3) return fail('Для сборки выбери аудио MP3 или WAV с устройства.', 415)
+    const size = Number(document.size.toString())
+    if (!Number.isSafeInteger(size) || size < 1 || size > maxBytes) {
+      return fail('Аудио из Telegram превышает лимит 15 МБ или недоступно. Выбери файл с устройства.', 413)
+    }
+    const bytes = await bot.downloadMedia(post)
+    if (typeof bytes === 'string' || !bytes || bytes.length !== size) {
+      return fail('Не удалось получить аудио целиком. Повтори попытку или выбери файл с устройства.', 502)
+    }
+    return { bytes: Uint8Array.from(bytes), contentType: isWav ? 'audio/wav' : 'audio/mpeg' }
+  } catch (failure) {
+    return failure instanceof TelegramPublishError
+      ? fail(failure.message + ' Можно выбрать файл с устройства.', 403)
+      : fail('Не удалось загрузить файл из Telegram. Повтори попытку или выбери файл с устройства.', 502)
+  }
+}
+
 export async function telegramImport(db: SupabaseClient, userId: number, body: Record<string, unknown>): Promise<Result> {
   const channel = body.channel
   if (typeof channel !== 'string' || !/^-100\d{5,16}$/.test(channel)) return fail('Выбери подключённый канал.')
