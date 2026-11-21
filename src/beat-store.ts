@@ -15,6 +15,7 @@ export type StoredBeat = {
   status: string
   audioName?: string
   isLoopSource?: boolean
+  loopAuthorId?: string | null
   telegramCaption: string
   youtubeDescription: string
   youtubeKeywords: string

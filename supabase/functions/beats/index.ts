@@ -179,7 +179,7 @@ Deno.serve(async (request) => {
         return {
           id: beat.id, createdAt: Date.parse(beat.created_at), title: beat.title,
           bpm: beat.bpm, key: beat.musical_key, tags: beat.tags, status: beat.status,
-          audioName: beat.audio_name, audioUrl: audio.data?.signedUrl, isLoopSource: beat.is_loop_source,
+          audioName: beat.audio_name, audioUrl: audio.data?.signedUrl, isLoopSource: beat.is_loop_source, loopAuthorId: beat.loop_author_id,
           coverUrl: cover.data?.signedUrl, telegramSourceUrl: beat.telegram_source_url, telegramSourceDate: beat.telegram_source_date,
           telegramCaption: beat.telegram_caption, youtubeDescription: beat.youtube_description,
           youtubeKeywords: beat.youtube_keywords, telegramLink: beat.telegram_link,

@@ -5,7 +5,7 @@ const uuid = /^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i
 const isId = (value: unknown): value is string => typeof value === 'string' && uuid.test(value)
 const fail = (error: string, status = 400) => ({ data: { error }, status })
 const loopColumns = 'id,title,bpm,musical_key,telegram_source_url'
-const producerColumns = 'id,name,channel'
+const producerColumns = 'id,name,channel,telegram_chat'
 const workColumns = 'id,title,loop_ids,producer_ids,release_url,audio_inbox_id'
 const inboxColumns = 'id,loop_id,title,author_hint,release_url,audio_name'
 const ownerColumn = 'telegram_user_id'
@@ -41,6 +41,23 @@ async function allRows<T extends { id: string }>(db: SupabaseClient, table: stri
 }
 
 export async function loopWorkspace(db: SupabaseClient, owner: number, body: Record<string, unknown>): Promise<{ data: object; status?: number }> {
+  if (body.action === 'loop-contacts') {
+    return { data: { contacts: await allRows(db, 'loop_producers', producerColumns, owner) } }
+  }
+
+  if (body.action === 'loop-author-save') {
+    if (!isId(body.beatId) || (body.contactId !== null && !isId(body.contactId))) return fail('Проверь запись и контакт.')
+    if (body.contactId !== null) {
+      const { data, error } = await db.from('loop_producers').select('id').eq(ownerColumn, owner).eq('id', body.contactId).maybeSingle()
+      if (error) throw error
+      if (!data) return fail('Контакт не найден.', 404)
+    }
+    const { data, error } = await db.from('beats').update({ loop_author_id: body.contactId })
+      .eq(ownerColumn, owner).eq('is_loop_source', false).eq('id', body.beatId).select('id').maybeSingle()
+    if (error) throw error
+    return data ? { data: { ok: true } } : fail('Запись не найдена.', 404)
+  }
+
   if (body.action === 'loop-workspace') {
     const [loops, producers, works, settings, incoming] = await Promise.all([
       allRows(db, 'beats', loopColumns, owner, true),
@@ -68,12 +85,14 @@ export async function loopWorkspace(db: SupabaseClient, owner: number, body: Rec
     const channel = channelUrl(body.channel)
     if (!name.replace(/^@+/, '') || name.length > 80 || (body.id != null && !isId(body.id))) return fail('Укажи имя продюсера.')
     if (channel === undefined) return fail('Укажи @канал или ссылку на канал Telegram.')
-    const producer = { name, channel }
+    const chat = body.chat === undefined ? undefined : channelUrl(body.chat)
+    if (body.chat !== undefined && chat === undefined) return fail('Укажи @ник или ссылку на личный чат Telegram.')
+    const producer = { name, channel, ...(chat !== undefined ? { telegram_chat: chat } : {}) }
     const query = body.id === undefined
       ? db.from('loop_producers').insert({ ...producer, telegram_user_id: owner })
       : db.from('loop_producers').update(producer).eq(ownerColumn, owner).eq('id', body.id)
     const { data, error } = await query.select(producerColumns).maybeSingle()
-    if (error?.code === '23505') return fail('Продюсер с таким именем уже есть. Выбери его из списка.', 409)
+    if (error?.code === '23505') return fail('Контакт с таким именем или чатом уже есть.', 409)
     if (error) throw error
     return data ? { data: { producer: data } } : fail('Продюсер не найден.', 404)
   }
