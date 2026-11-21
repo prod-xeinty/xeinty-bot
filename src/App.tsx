@@ -1,12 +1,13 @@
 import { YoutubeChannelSettings, YoutubeUpload } from './youtube-upload'
 import { getBeatPublications, postUrl, PublicationHistory, rememberPublication } from './publication-history'
 import { PlannedReleases } from './planned-releases'
+import { ProducerSales } from './producer-sales'
 import { creativeModes, readCreativeMode, type CreativeMode } from './creative-mode'
 import { LoopWorkspace, type LoopPage } from './loop-workspace'
 import { usePlatformStats, StatsOverview, type StatsRanking } from './platform-stats'
 import xeintyLogo from './assets/xeinty-logo.png'
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
-import { ArrowLeft, ArrowRight, AudioLines, Check, ChevronDown, ChevronRight, ChevronUp, CircleHelp, Clipboard, Download, ExternalLink, FileAudio2, ImagePlus, Link2, ListMusic, Music2, Ellipsis, Plus, Radio, Send, Sun, Moon, Trash2, UploadCloud, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, AudioLines, Check, ChevronDown, ChevronRight, ChevronUp, CircleHelp, Clipboard, Handshake, Download, ExternalLink, FileAudio2, ImagePlus, Link2, ListMusic, Music2, Ellipsis, Plus, Radio, Send, Sun, Moon, Trash2, UploadCloud, X } from 'lucide-react'
 import { AudioDock, PlayPauseIcon, useAudioPlayer, type Track } from './audio-player'
 import { joinTrackCaption, telegramCaptionLimit } from '../supabase/functions/beats/telegram-caption'
 import { RecordMenu } from './record-menu'
@@ -28,7 +29,7 @@ import { DirectTelegramPublication, readPublicationCover, OwnYoutubeVideo } from
 
 import { beatCaptionValues, CaptionTemplates, CaptionTools, readCaptionPreferences, TelegramChannels } from './telegram-settings'
 
-type Screen = LoopPage | 'library' | 'create' | 'publish' | 'channels' | 'more' | 'templates' | 'overview' | 'detail' | 'import'
+type Screen = LoopPage | 'sales' | 'library' | 'create' | 'publish' | 'channels' | 'more' | 'templates' | 'overview' | 'detail' | 'import'
 type DetailTab = 'data' | 'publications'
 type PublishMode = 'single' | 'batch' | 'planned'
 const telegramPublishingEnabled = false
@@ -872,6 +873,7 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
   ] : [
     { id: 'library' as Screen, label: creativeMode === 'artist' ? 'Треки' : 'Библиотека', Icon: ListMusic },
     { id: 'publish' as Screen, label: 'Публикация', Icon: Send },
+    ...(creativeMode === 'producer' ? [{ id: 'sales' as Screen, label: 'Продажи', Icon: Handshake }] : []),
     { id: 'channels' as Screen, label: 'Каналы', Icon: Radio },
     { id: 'overview' as Screen, label: 'Статистика', Icon: AudioLines },
     { id: 'more' as Screen, label: 'Ещё', Icon: Ellipsis },
@@ -910,6 +912,11 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
               const beat = beats.find((item) => item.id === id)
               return beat && canPlay(beat) ? trackPlayButton(beat) : null
             }} />}
+          {screen === 'sales' && creativeMode === 'producer' && <ProducerSales initData={statsSession} openChat={(url) => {
+            if (new URL(url).hostname !== 't.me' || !webApp?.openTelegramLink) return false
+            webApp.openTelegramLink(url)
+            return true
+          }} />}
           {screen === 'library' && <>
             {showImportPrompt && <section className="form-panel import-invite" aria-label="Импорт библиотеки">
               <div className="section-intro"><h2>Уже публикуешь музыку в Telegram?</h2><p>Перенеси каталог из своего канала.</p></div>
