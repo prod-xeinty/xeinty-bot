@@ -178,16 +178,19 @@ export type PlatformStats = {
 }
 
 export type SaleCurrency = 'RUB' | 'USD' | 'EUR'
+export type SaleType = 'lease' | 'exclusive' | 'custom' | 'other'
 export type ProducerDeal = {
   id: string; title: string; contact: string; chat_url: string | null; amount_minor: number | null; currency: SaleCurrency
   notes: string; created_at: string; updated_at: string; completed_at: string | null
+  beat_id: string | null; sale_type: SaleType | null; follow_up_on: string | null; follow_up_action: string | null
 }
 export type DealInput = {
   id: string; expectedUpdatedAt?: string; title: string; contact: string; chat: string; amountMinor: number | null
   currency: SaleCurrency; notes: string; completed: boolean
+  beatId: string | null; saleType: SaleType | null; followUpOn: string | null; followUpAction: string | null
 }
-export function loadProducerDeals(initData: string, signal: AbortSignal) {
-  return call<{ deals: ProducerDeal[] }>(initData, 'sales-list', {}, signal)
+export function loadProducerDeals(initData: string, signal: AbortSignal, beatId?: string) {
+  return call<{ deals: ProducerDeal[] }>(initData, 'sales-list', { beatId }, signal)
 }
 export function saveProducerDeal(initData: string, deal: DealInput) {
   return call<{ deal: ProducerDeal }>(initData, 'sales-save', deal)

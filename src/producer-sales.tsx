@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Check, ExternalLink, MessageCircle, Plus } from 'lucide-react'
 import { Dropdown } from './choice-menu'
 import { deleteProducerDeal, loadProducerDeals, saveProducerDeal, type DealInput, type ProducerDeal, type SaleCurrency } from './cloud-beats'
@@ -8,16 +8,38 @@ const currencies: { value: SaleCurrency; label: string }[] = [
 ]
 const money = Object.fromEntries(currencies.map(({ value }) => [value, new Intl.NumberFormat('ru-RU', { style: 'currency', currency: value, minimumFractionDigits: 0 })])) as Record<SaleCurrency, Intl.NumberFormat>
 const dates = new Intl.DateTimeFormat('ru-RU', { dateStyle: 'medium' })
+const saleTypes = [
+  { value: 'lease', label: 'Аренда' }, { value: 'exclusive', label: 'Эксклюзив' },
+  { value: 'custom', label: 'Кастом' }, { value: 'other', label: 'Другое' },
+] as const
+type SalesBeat = { id: string; title: string }
+
+function localDay() {
+  const now = new Date()
+  return [now.getFullYear(), now.getMonth() + 1, now.getDate()].map((part) => String(part).padStart(2, '0')).join('-')
+}
+
+function displayDay(value: string) {
+  const [year, month, day] = value.split('-').map(Number)
+  const date = new Date(0)
+  date.setFullYear(year, month - 1, day)
+  date.setHours(12, 0, 0, 0)
+  return dates.format(date)
+}
 type Draft = Omit<DealInput, 'amountMinor'> & { amount: string }
 
-function newDraft(): Draft {
-  return { id: crypto.randomUUID(), title: '', contact: '', chat: '', amount: '', currency: 'RUB', notes: '', completed: false }
+function newDraft(beat?: SalesBeat): Draft {
+  return {
+    id: crypto.randomUUID(), title: beat?.title ?? '', contact: '', chat: '', amount: '', currency: 'RUB', notes: '', completed: false,
+    beatId: beat?.id ?? null, saleType: null, followUpOn: null, followUpAction: null,
+  }
 }
 
 function inputFrom(deal: ProducerDeal): DealInput {
   return {
     id: deal.id, expectedUpdatedAt: deal.updated_at, title: deal.title, contact: deal.contact, chat: deal.chat_url ?? '',
     amountMinor: deal.amount_minor, currency: deal.currency, notes: deal.notes, completed: Boolean(deal.completed_at),
+    beatId: deal.beat_id ?? null, saleType: deal.sale_type ?? null, followUpOn: deal.follow_up_on ?? null, followUpAction: deal.follow_up_action ?? null,
   }
 }
 
@@ -35,13 +57,17 @@ function ChatLink({ url, label, open }: { url: string; label: string; open: (url
   </a>
 }
 
-export function ProducerSales({ initData, openChat }: { initData?: string; openChat: (url: string) => boolean }) {
+export function ProducerSales({ initData, openChat, beat, library, moreLibrary, openBeat }: {
+  initData?: string; openChat: (url: string) => boolean
+  beat?: SalesBeat; library: SalesBeat[]; moreLibrary?: ReactNode; openBeat: (id: string) => void
+}) {
   const [deals, setDeals] = useState<ProducerDeal[]>()
   const [loadError, setLoadError] = useState('')
   const [mutationError, setMutationError] = useState('')
   const [notice, setNotice] = useState('')
   const [revision, setRevision] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [today, setToday] = useState(localDay)
   const [saving, setSaving] = useState(false)
   const [draft, setDraft] = useState<Draft>()
   const [confirm, setConfirm] = useState<string>()
@@ -53,13 +79,20 @@ export function ProducerSales({ initData, openChat }: { initData?: string; openC
     const request = new AbortController()
     setLoading(true)
     setLoadError('')
-    void loadProducerDeals(initData, request.signal).then(({ deals }) => {
+    void loadProducerDeals(initData, request.signal, beat?.id).then(({ deals }) => {
       if (!request.signal.aborted) setDeals(deals)
     }).catch((failure) => {
       if (!request.signal.aborted) setLoadError(failure instanceof Error ? failure.message : 'Не удалось загрузить сделки.')
     }).finally(() => { if (!request.signal.aborted) setLoading(false) })
     return () => request.abort()
-  }, [initData, revision])
+  }, [initData, revision, beat?.id])
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setToday(localDay()), 30_000)
+    const refreshDay = () => setToday(localDay())
+    window.addEventListener('focus', refreshDay)
+    return () => { window.clearInterval(timer); window.removeEventListener('focus', refreshDay) }
+  }, [])
 
   useEffect(() => {
     if (draft?.id) formRef.current?.querySelector('input')?.focus()
@@ -69,7 +102,7 @@ export function ProducerSales({ initData, openChat }: { initData?: string; openC
     setMutationError('')
     setNotice('')
     setConfirm(undefined)
-    if (!deal) { setDraft(newDraft()); return }
+    if (!deal) { setDraft(newDraft(beat)); return }
     const { amountMinor, ...input } = inputFrom(deal)
     setDraft({ ...input, amount: amountMinor === null ? '' : String(amountMinor / 100) })
   }
@@ -110,6 +143,11 @@ export function ProducerSales({ initData, openChat }: { initData?: string; openC
   const all = [...(deals ?? [])].sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))
   const active = all.filter((deal) => !deal.completed_at)
   const completed = all.filter((deal) => deal.completed_at)
+  const due = active.filter((deal) => deal.follow_up_on && deal.follow_up_on <= today)
+    .sort((a, b) => a.follow_up_on!.localeCompare(b.follow_up_on!))
+  const libraryById = new Map(library.map((item) => [item.id, item]))
+  const beatOptions = [{ value: '', label: 'Без привязки' }, ...library.map(({ id, title }) => ({ value: id, label: title }))]
+  if (draft?.beatId && !libraryById.has(draft.beatId)) beatOptions.push({ value: draft.beatId, label: 'Привязанный бит' })
   const revenue = new Map<SaleCurrency, number>()
   for (const deal of completed) {
     if (deal.amount_minor !== null) revenue.set(deal.currency, (revenue.get(deal.currency) ?? 0) + deal.amount_minor)
@@ -123,15 +161,23 @@ export function ProducerSales({ initData, openChat }: { initData?: string; openC
   function dealCard(deal: ProducerDeal) {
     const complete = Boolean(deal.completed_at)
     const editing = draft?.id === deal.id
+    const soldBeat = deal.beat_id ? libraryById.get(deal.beat_id) : undefined
+    const kind = saleTypes.find(({ value }) => value === deal.sale_type)?.label
     return <article key={deal.id} className="links-panel loop-panel sales-deal">
       <div className="sales-deal-head">
-        <div><strong>{deal.title}</strong>{deal.contact && <small className="form-hint">{deal.contact}</small>}</div>
+        <div><strong>{deal.title}</strong>{deal.contact && <small className="form-hint">{deal.contact}</small>}
+          {(kind || (!beat && soldBeat)) && <small className="form-hint">{[kind, !beat ? soldBeat?.title : undefined].filter(Boolean).join(' · ')}</small>}</div>
         <div>{deal.amount_minor !== null ? <strong>{money[deal.currency].format(deal.amount_minor / 100)}</strong> : <small className="form-hint">Сумма не указана</small>}
           {deal.completed_at && <time className="form-hint" dateTime={deal.completed_at}>{dates.format(Date.parse(deal.completed_at))}</time>}</div>
       </div>
+      {!complete && (deal.follow_up_on || deal.follow_up_action) && <p className="form-hint sales-notes">
+        {deal.follow_up_on && <time dateTime={deal.follow_up_on}>{displayDay(deal.follow_up_on)} · </time>}
+        {deal.follow_up_action || 'Связаться с клиентом'}
+      </p>}
       {deal.notes && <p className="form-hint sales-notes">{deal.notes}</p>}
       <div className="import-actions">
         {deal.chat_url && <ChatLink url={deal.chat_url} label="Открыть чат" open={openChat} />}
+        {!beat && soldBeat && <button type="button" className="outline-button" disabled={locked} onClick={() => openBeat(soldBeat.id)}>Продажи бита</button>}
         {!editing && <button type="button" className="outline-button" disabled={locked} onClick={() => openForm(deal)}>Редактировать</button>}
         <button type="button" className="outline-button" disabled={locked || editing} onClick={() => void mutate(async () => {
           await persist({ ...inputFrom(deal), completed: !complete })
@@ -152,7 +198,7 @@ export function ProducerSales({ initData, openChat }: { initData?: string; openC
   }
 
   return <div className="loop-workspace sales-workspace">
-    <div className="page-heading"><h1>Продажи</h1></div>
+    {beat ? <div className="section-intro"><h2>Продажи бита</h2></div> : <div className="page-heading"><h1>Продажи</h1></div>}
     {!initData ? <p className="form-hint">Открой XEINTY в Telegram, чтобы вести сделки.</p> : <>
       <div className="import-actions">
         <button type="button" className="primary-button" disabled={locked || Boolean(draft)} onClick={() => openForm()}>
@@ -170,6 +216,13 @@ export function ProducerSales({ initData, openChat }: { initData?: string; openC
         <label className="field"><span>Название сделки</span><input required maxLength={120} disabled={saving} value={draft.title}
           onChange={(event) => setDraft({ ...draft, title: event.target.value })} placeholder="Название бита или заказа" /></label>
         <div className="field-grid">
+          {!beat && <Dropdown label="Бит из библиотеки" value={draft.beatId ?? ''} options={beatOptions} disabled={saving}
+            onChange={(value) => setDraft({
+              ...draft, beatId: value || null, title: draft.title || libraryById.get(value)?.title || '',
+            })} />}
+          <Dropdown label="Тип продажи" value={draft.saleType ?? ''} disabled={saving}
+            options={[{ value: '', label: 'Не указан' }, ...saleTypes]}
+            onChange={(value) => setDraft({ ...draft, saleType: saleTypes.find((option) => option.value === value)?.value ?? null })} />
           <label className="field"><span>Клиент</span><input maxLength={80} disabled={saving} value={draft.contact}
             onChange={(event) => setDraft({ ...draft, contact: event.target.value })} /></label>
           <label className="field"><span>Деловой чат</span><input maxLength={500} disabled={saving} value={draft.chat}
@@ -181,6 +234,13 @@ export function ProducerSales({ initData, openChat }: { initData?: string; openC
             if (currency) setDraft({ ...draft, currency })
           }} />
         </div>
+        {!beat && moreLibrary}
+        <div className="field-grid">
+          <label className="field"><span>Дата следующего контакта</span><input type="date" disabled={saving}
+            value={draft.followUpOn ?? ''} onChange={(event) => setDraft({ ...draft, followUpOn: event.target.value || null })} /></label>
+          <label className="field"><span>Следующий шаг</span><input maxLength={160} disabled={saving} value={draft.followUpAction ?? ''}
+            onChange={(event) => setDraft({ ...draft, followUpAction: event.target.value || null })} placeholder="Например, уточнить оплату" /></label>
+        </div>
         <label className="field"><span>Заметка</span><textarea maxLength={1000} rows={3} disabled={saving} value={draft.notes}
           onChange={(event) => setDraft({ ...draft, notes: event.target.value })} /></label>
         <label className="sales-status"><input type="checkbox" disabled={saving} checked={draft.completed}
@@ -189,6 +249,18 @@ export function ProducerSales({ initData, openChat }: { initData?: string; openC
           <button type="button" className="outline-button" disabled={saving} onClick={() => { setDraft(undefined); setMutationError('') }}>Отмена</button></div>
       </form>}
       {deals && <>
+        {!beat && <section className="form-panel loop-panel" aria-label="Пора ответить">
+          <div className="section-intro"><h2>Пора ответить</h2></div>
+          {due.length ? <ul className="loop-credits sales-follow-up">{due.map((deal) => <li key={deal.id}>
+            <div><strong>{deal.title}</strong>
+              <small className="form-hint">{deal.follow_up_on === today ? 'Сегодня' : 'Просрочено · ' + displayDay(deal.follow_up_on!)} · {deal.follow_up_action || 'Связаться с клиентом'}</small>
+            </div>
+            <div className="import-actions">
+              {deal.chat_url && <ChatLink url={deal.chat_url} label="Открыть чат" open={openChat} />}
+              <button type="button" className="outline-button" disabled={locked} onClick={() => openForm(deal)}>Открыть сделку</button>
+            </div>
+          </li>)}</ul> : <p className="form-hint">На сегодня нет запланированных контактов.</p>}
+        </section>}
         <section className="form-panel loop-panel" aria-label="Статистика продаж">
           <div className="section-intro"><h2>Статистика продаж</h2></div>
           <dl className="stats-metric-grid">
@@ -201,12 +273,12 @@ export function ProducerSales({ initData, openChat }: { initData?: string; openC
             </li> : [])}</ul> : <p className="form-hint">Пока нет завершённых сделок с указанной суммой.</p>}
           </div>
         </section>
-        <section className="form-panel loop-panel" aria-label="Деловые чаты">
+        {!beat && <section className="form-panel loop-panel" aria-label="Деловые чаты">
           <div className="section-intro"><h2>Деловые чаты</h2></div>
           {chatLinks.size ? <ul className="loop-credits sales-chats">{[...chatLinks].map(([url, deal]) => <li key={url}>
             <ChatLink url={url} label={chatLabel(deal)} open={openChat} />
           </li>)}</ul> : <p className="form-hint">Ссылки из карточек сделок появятся здесь.</p>}
-        </section>
+        </section>}
         {([{ label: 'Открытые сделки', items: active, empty: 'Сделок в работе пока нет.' },
           { label: 'Завершённые сделки', items: completed, empty: 'Завершённых сделок пока нет.' }]).map(({ label, items, empty }) =>
           <section className="list-section loop-panel sales-deals" aria-label={label} key={label}>
