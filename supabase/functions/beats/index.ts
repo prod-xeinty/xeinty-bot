@@ -227,6 +227,24 @@ Deno.serve(async (request) => {
       return reply(result.data, result.status ?? 200, origin)
     }
 
+    if (typeof action === 'string' && action.startsWith('loop-')) {
+      if (action === 'loop-channel-stats') {
+        const channel = body.channel
+        if (channel !== undefined && (typeof channel !== 'string' || !/^-100\d{5,16}$/.test(channel))) {
+          return reply({ error: 'Выбери канал Telegram.' }, 400, origin)
+        }
+        try {
+          const { telegramStats } = await import('./telegram-stats.ts')
+          return reply(await telegramStats(db, userId, undefined, { channel }), 200, origin)
+        } catch {
+          return reply({ error: 'Не удалось получить статистику Telegram. Попробуй обновить позже.' }, 502, origin)
+        }
+      }
+      const { loopWorkspace } = await import('./loop-workspace.ts')
+      const result = await loopWorkspace(db, userId, body)
+      return reply(result.data, result.status ?? 200, origin)
+    }
+
     if (action === 'telegram-stats') {
       try {
         const { telegramStats } = await import('./telegram-stats.ts')

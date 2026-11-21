@@ -87,8 +87,8 @@ export function previewTelegramImport(initData: string, channel: string, first: 
   return call<TelegramImportPreview>(initData, 'telegram-import-preview', { channel, first, last, cursor })
 }
 
-export function saveTelegramImport(initData: string, channel: string, ids: number[]) {
-  return call<{ added: number; skipped: number; savedIds: number[] }>(initData, 'telegram-import-save', { channel, ids })
+export function saveTelegramImport(initData: string, channel: string, ids: number[], asLoops = false) {
+  return call<{ added: number; skipped: number; savedIds: number[] }>(initData, 'telegram-import-save', { channel, ids, asLoops })
 }
 
 export async function createCloudBeat(initData: string, beat: StoredBeat, audio: File, cover?: File): Promise<string> {
@@ -175,6 +175,30 @@ export type PlatformStats = {
   restricted?: boolean
   fetchedAt: string
   series?: { day: string; views: number }[] | null
+}
+
+export type LoopSource = { id: string; title: string; bpm: string; musical_key: string; telegram_source_url: string | null }
+export type LoopProducer = { id: string; name: string; channel: string | null }
+export type LoopWork = { id: string; title: string; loop_ids: string[]; producer_ids: string[]; release_url: string | null }
+export type LoopWorkspaceData = { loops: LoopSource[]; producers: LoopProducer[]; works: LoopWork[] }
+
+export function loadLoopWorkspace(initData: string, signal: AbortSignal) {
+  return call<LoopWorkspaceData>(initData, 'loop-workspace', {}, signal)
+}
+export function addLoopSource(initData: string, id: string) {
+  return call<{ loop: LoopSource }>(initData, 'loop-source-add', { id })
+}
+export function saveLoopProducer(initData: string, producer: { id?: string; name: string; channel: string }) {
+  return call<{ producer: LoopProducer }>(initData, 'loop-producer-save', producer)
+}
+export function saveLoopWork(initData: string, work: { id?: string; title: string; loopIds: string[]; producerIds: string[]; releaseUrl: string }) {
+  return call<{ work: LoopWork }>(initData, 'loop-work-save', work)
+}
+export function deleteLoopWork(initData: string, id: string) {
+  return call<{ ok: boolean }>(initData, 'loop-work-delete', { id })
+}
+export function loadLoopChannelStats(initData: string, channel?: string) {
+  return call<PlatformStats>(initData, 'loop-channel-stats', { channel })
 }
 
 export function loadPlatformStats(initData: string, platform: StatsPlatform, signal: AbortSignal, beatId?: string) {

@@ -6,8 +6,8 @@ import { previewTelegramImport, saveTelegramImport, type TelegramChannel, type T
 const dateFormat = new Intl.DateTimeFormat('ru-RU', { dateStyle: 'medium' })
 const saveBatchSize = 100
 
-export function TelegramImport({ initData, channels, initialSuggestion, openChannels, openLibrary, onSaved }: {
-  initData?: string; channels: TelegramChannel[]; initialSuggestion?: TelegramImportSuggestion; openChannels: () => void; openLibrary: () => void; onSaved: () => void
+export function TelegramImport({ initData, channels, initialSuggestion, openChannels, openLibrary, onSaved, asLoops = false }: {
+  initData?: string; channels: TelegramChannel[]; initialSuggestion?: TelegramImportSuggestion; asLoops?: boolean; openChannels: () => void; openLibrary: () => void; onSaved: () => void
 }) {
   const [preferredChannel, setPreferredChannel] = useState(initialSuggestion?.channel ?? '')
   const [first, setFirst] = useState(initialSuggestion?.first ?? '')
@@ -60,7 +60,7 @@ export function TelegramImport({ initData, channels, initialSuggestion, openChan
     try {
       for (let i = 0; i < selected.length; i += saveBatchSize) {
         const ids = selected.slice(i, i + saveBatchSize)
-        const counts = await saveTelegramImport(initData, channel, ids)
+        const counts = await saveTelegramImport(initData, channel, ids, asLoops)
         processed += ids.length
         const processedIds = new Set(ids)
         const savedIds = new Set(counts.savedIds)
@@ -133,7 +133,7 @@ export function TelegramImport({ initData, channels, initialSuggestion, openChan
             {busy === "read" ? "Продолжаем поиск…" : "Продолжить поиск"}
           </button>}
           {busy !== 'save' && selected.length > 0 && <button type="button" className="primary-button" disabled={Boolean(busy)} onClick={() => void save()}>
-            {saveFailed ? 'Повторить импорт' : 'Добавить в библиотеку'} · {selected.length} <ArrowRight size={16} />
+            {saveFailed ? 'Повторить импорт' : asLoops ? 'Добавить в лупы' : 'Добавить в библиотеку'} · {selected.length} <ArrowRight size={16} />
           </button>}
         </div>
         {busy === 'save' && <div className="youtube-upload-progress">
@@ -145,7 +145,7 @@ export function TelegramImport({ initData, channels, initialSuggestion, openChan
         {error}{saveFailed && selected.length > 0 && <> Осталось импортировать: {selected.length}.</>}
       </p>}
       {outcome && <div className="import-actions"><p className="form-hint" role="status">Добавлено: {outcome.added}{outcome.skipped ? " · Пропущено: " + outcome.skipped : ""}</p>
-        <button type="button" className="outline-button" disabled={Boolean(busy)} onClick={openLibrary}>Открыть библиотеку <ArrowRight size={16} /></button>
+        <button type="button" className="outline-button" disabled={Boolean(busy)} onClick={openLibrary}>{asLoops ? 'Открыть лупы' : 'Открыть библиотеку'} <ArrowRight size={16} /></button>
       </div>}
     </>}
   </section>
