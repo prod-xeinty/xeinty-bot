@@ -14,6 +14,7 @@ export type StoredBeat = {
   tags: string
   status: string
   audioName?: string
+  isLoopSource?: boolean
   telegramCaption: string
   youtubeDescription: string
   youtubeKeywords: string

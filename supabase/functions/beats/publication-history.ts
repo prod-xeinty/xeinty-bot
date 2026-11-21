@@ -6,7 +6,7 @@ export async function publicationLinks(db: SupabaseClient, userId: number, platf
   const query = db.from('beats')
     .select('id,telegram_link,youtube_link,beat_publications(platform,url)')
     .eq('telegram_user_id', userId)
-  const { data, error } = await (beatId ? query.eq('id', beatId) : query.order('created_at', { ascending: false }).limit(200))
+  const { data, error } = await (beatId ? query.eq('id', beatId) : query.eq('is_loop_source', false).order('created_at', { ascending: false }).limit(200))
   if (error) throw error
   return (data ?? []).flatMap((beat) => {
     const latest = platform === 'youtube' ? beat.youtube_link : beat.telegram_link

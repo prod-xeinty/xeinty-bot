@@ -69,8 +69,8 @@ async function signedUpload(path: string, token: string, file: File): Promise<vo
 
 export type BeatCursor = { id: string; createdAt: string }
 
-export async function loadCloudBeats(initData: string, signal?: AbortSignal, cursor?: BeatCursor) {
-  const result = await call<{ beats: CloudBeat[]; next?: BeatCursor | null }>(initData, 'list', { cursor }, signal)
+export async function loadCloudBeats(initData: string, asLoops: boolean, signal?: AbortSignal, cursor?: BeatCursor) {
+  const result = await call<{ beats: CloudBeat[]; next?: BeatCursor | null }>(initData, 'list', { asLoops, cursor }, signal)
   return { beats: result.beats.map((beat) => ({ ...beat, cloud: true as const })), next: result.next ?? null }
 }
 
@@ -228,9 +228,6 @@ export async function loadLoopInboxAudio(initData: string, id: string, signal: A
 
 export function loadLoopWorkspace(initData: string, signal: AbortSignal) {
   return call<LoopWorkspaceData>(initData, 'loop-workspace', {}, signal)
-}
-export function addLoopSource(initData: string, id: string) {
-  return call<{ loop: LoopSource }>(initData, 'loop-source-add', { id })
 }
 export function saveLoopProducer(initData: string, producer: { id?: string; name: string; channel: string }) {
   return call<{ producer: LoopProducer }>(initData, 'loop-producer-save', producer)

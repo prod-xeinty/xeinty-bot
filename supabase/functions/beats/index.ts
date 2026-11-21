@@ -166,6 +166,7 @@ Deno.serve(async (request) => {
         return reply({ error: 'Обнови библиотеку и попробуй ещё раз.' }, 400, origin)
       }
       let query = db.from('beats').select('*,beat_publications(platform,url,saved_at,publish_at)').eq('telegram_user_id', userId)
+      if (typeof body.asLoops === 'boolean') query = query.eq('is_loop_source', body.asLoops)
       if (cursor) query = query.or('created_at.lt.' + cursor.createdAt + ',and(created_at.eq.' + cursor.createdAt + ',id.lt.' + cursor.id + ')')
       const { data, error } = await query.order('created_at', { ascending: false }).order('id', { ascending: false }).limit(pageSize + 1)
       if (error) throw error
@@ -178,7 +179,7 @@ Deno.serve(async (request) => {
         return {
           id: beat.id, createdAt: Date.parse(beat.created_at), title: beat.title,
           bpm: beat.bpm, key: beat.musical_key, tags: beat.tags, status: beat.status,
-          audioName: beat.audio_name, audioUrl: audio.data?.signedUrl,
+          audioName: beat.audio_name, audioUrl: audio.data?.signedUrl, isLoopSource: beat.is_loop_source,
           coverUrl: cover.data?.signedUrl, telegramSourceUrl: beat.telegram_source_url, telegramSourceDate: beat.telegram_source_date,
           telegramCaption: beat.telegram_caption, youtubeDescription: beat.youtube_description,
           youtubeKeywords: beat.youtube_keywords, telegramLink: beat.telegram_link,
@@ -358,7 +359,7 @@ Deno.serve(async (request) => {
       const row = {
         id: body.id, telegram_user_id: userId, ...columns(beat),
         audio_name: text(body.audioName, 255), audio_path: body.audioPath,
-        audio_size: audioInfo.data.size, cover_path: body.coverPath ?? null,
+        audio_size: audioInfo.data.size, cover_path: body.coverPath ?? null, is_loop_source: body.beat.isLoopSource === true,
       }
       const { error } = await db.from('beats').insert(row)
       if (error) throw error

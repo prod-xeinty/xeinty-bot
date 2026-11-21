@@ -6,7 +6,7 @@ import { creativeModes, readCreativeMode, type CreativeMode } from './creative-m
 import { LoopWorkspace, type LoopPage } from './loop-workspace'
 import { usePlatformStats, StatsOverview, type StatsRanking } from './platform-stats'
 import xeintyLogo from './assets/xeinty-logo.png'
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { ArrowLeft, ArrowRight, AudioLines, Check, ChevronDown, ChevronRight, ChevronUp, CircleHelp, Clipboard, Handshake, Download, ExternalLink, FileAudio2, ImagePlus, Link2, ListMusic, Music2, Ellipsis, Plus, Radio, Send, Sun, Moon, Trash2, UploadCloud, X } from 'lucide-react'
 import { AudioDock, PlayPauseIcon, useAudioPlayer, type Track } from './audio-player'
 import { joinTrackCaption, telegramCaptionLimit } from '../supabase/functions/beats/telegram-caption'
@@ -94,7 +94,7 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
   const [telegramChecked, setTelegramChecked] = useState(Boolean(webApp))
   const [localReady, setLocalReady] = useState(false)
   const [cloudReady, setCloudReady] = useState(false)
-  const [cloudNext, setCloudNext] = useState<BeatCursor | null>(null)
+  const [cloudCursors, setCloudCursors] = useState<Partial<Record<'loops' | 'library', BeatCursor | null>>>({})
   const [cloudPageBusy, setCloudPageBusy] = useState(false)
   const cloudPageRequest = useRef(false)
   const importPromptKey = 'xeinty-telegram-import-seen:' + (webApp?.initDataUnsafe.user?.id ?? 'telegram')
@@ -105,6 +105,8 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
   const [creativeMode, setCreativeMode] = useState<CreativeMode>(() => readCreativeMode() ?? 'producer')
   const isLoopmaker = creativeMode === 'loopmaker'
   const homeScreen = isLoopmaker ? 'loops' : 'library'
+  const cloudNext = cloudCursors[homeScreen]
+  const currentMode = useRef(creativeMode)
   const [screen, setScreen] = useState<Screen>(() => homeScreen)
   const [tab, setTab] = useState<DetailTab>('data')
   const [detailFromStats, setDetailFromStats] = useState(false)
@@ -112,7 +114,8 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
   const [statsRanking, setStatsRanking] = useState<StatsRanking>({ query: '', metrics: { youtube: 'views', telegram: 'views' } })
   const [focusedPublication, setFocusedPublication] = useState<string>()
   const [publishMode, setPublishMode] = useState<PublishMode>('single')
-  const [beats, setBeats] = useState<Beat[]>(demoBeats)
+  const [records, setBeats] = useState<Beat[]>(demoBeats)
+  const beats = useMemo(() => records.filter((beat) => Boolean(beat.isLoopSource) === isLoopmaker), [records, isLoopmaker])
   const [selectedId, setSelectedId] = useState('no-signal')
   const [toast, setToast] = useState('')
   const [form, setForm] = useState({ title: '', bpm: '', key: '', tags: '' })
@@ -147,8 +150,8 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
   const fileUrlsRef = useRef<string[]>([])
   const cloudSaveTimersRef = useRef(new Map<string, number>())
   const pendingCloudWrites = useRef(new Map<string, Promise<void>>())
-  const selected = beats.find((beat) => beat.id === selectedId) ?? beats[0]
-  const latest = beats[0]
+  const selected = beats.find((beat) => beat.id === selectedId) ?? beats[0] ?? demoBeats[0]
+  const latest = beats[0] ?? demoBeats[0]
   const temporaryVideoInputs = videoInputs?.beatId === selected.id ? videoInputs : undefined
   const telegramVideoSession = selected.cloud && selected.telegramSourceUrl ? webApp?.initData : undefined
   const needsVideoAudio = !selected.audioFile && !selected.audioUrl
@@ -475,9 +478,9 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
     let cancelled = false
     const controller = new AbortController()
     const timer = window.setTimeout(() => controller.abort(), 9000)
-    void loadCloudBeats(webApp.initData, controller.signal).then(({ beats: saved, next }) => {
+    void loadCloudBeats(webApp.initData, isLoopmaker, controller.signal).then(({ beats: saved, next }) => {
       if (cancelled) return
-      setCloudNext(next)
+      setCloudCursors((current) => ({ ...current, [homeScreen]: next }))
       setBeats((current) => [
         ...saved.map((beat) => ({ ...beat, key: normalizeMusicKey(beat.key) ?? beat.key, cover: 0 })),
         ...current.filter((beat) => !saved.some((remote) => remote.id === beat.id)),
@@ -489,7 +492,7 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
       if (!cancelled) setCloudReady(true)
     })
     return () => { cancelled = true; window.clearTimeout(timer); controller.abort() }
-  }, [webApp])
+  }, [webApp, isLoopmaker, homeScreen])
 
   useEffect(() => {
     if (screen === 'publish' && selected.isDemo) {
@@ -567,12 +570,12 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
     cloudPageRequest.current = true
     setCloudPageBusy(true)
     try {
-      const { beats: saved, next } = await loadCloudBeats(webApp.initData, AbortSignal.timeout(12000), cursor)
+      const { beats: saved, next } = await loadCloudBeats(webApp.initData, isLoopmaker, AbortSignal.timeout(12000), cursor)
       const page = saved.map((beat) => ({ ...beat, key: normalizeMusicKey(beat.key) ?? beat.key, cover: 0 }))
       const ids = new Set(page.map((beat) => beat.id))
       setBeats((current) => cursor ? [...current, ...page.filter((beat) => !current.some((item) => item.id === beat.id))]
         : [...page, ...current.filter((beat) => !ids.has(beat.id))])
-      setCloudNext(next)
+      setCloudCursors((current) => ({ ...current, [homeScreen]: next }))
     } catch (failure) {
       notify(failure instanceof Error && failure.name !== 'TimeoutError' ? failure.message : 'Не удалось загрузить библиотеку. Попробуй ещё раз.')
     } finally { cloudPageRequest.current = false; setCloudPageBusy(false) }
@@ -600,6 +603,12 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
   function notify(message: string) { setToast(message); window.setTimeout(() => setToast(''), 3500) }
   function changeCreativeMode(mode: CreativeMode) {
     if (mode === creativeMode) return
+    currentMode.current = mode
+    audioPlayer.close()
+    setSelectedId('no-signal')
+    setForm({ title: '', bpm: '', key: '', tags: '' })
+    setAudioFile(null)
+    setCoverFile(null)
     setCreativeMode(mode)
     try { localStorage.setItem('xeinty-creative-mode', mode) } catch { /* The current session still uses the selected mode. */ }
     navigate(mode === 'loopmaker' ? 'loops' : 'library')
@@ -815,7 +824,8 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
       setVideoInputs((inputs) => inputs?.beatId === beat.id ? undefined : inputs)
       setBeats((all) => all.filter((item) => item.id !== beat.id))
       setConfirmDelete(false)
-      if (screen === 'detail') navigate('library')
+      if (screen === 'detail' && currentMode.current === creativeMode) navigate(homeScreen)
+      if (beat.isLoopSource) setImportRevision((value) => value + 1)
       notify(beat.cloud ? 'Запись удалена из облака' : 'Запись удалена с этого устройства')
       return true
     } catch {
@@ -883,7 +893,7 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
     setSavingBeat(true)
     const title = form.title.trim().toUpperCase()
     const beat: Beat = {
-      id: `beat-${Date.now()}`, createdAt: Date.now(), title, bpm: form.bpm || '—', key: normalizedKey || '—',
+      id: `beat-${Date.now()}`, createdAt: Date.now(), title, bpm: form.bpm || '—', key: normalizedKey || '—', isLoopSource: isLoopmaker,
       tags: form.tags.trim() || 'без тегов', status: 'Черновик', cover: 0,
       coverUrl: coverFile ? URL.createObjectURL(coverFile) : undefined,
       audioUrl: audioFile ? URL.createObjectURL(audioFile) : undefined, audioName: audioFile?.name, audioFile: audioFile ?? undefined, coverFile: coverFile ?? undefined,
@@ -906,9 +916,15 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
     if (beat.coverUrl) fileUrlsRef.current.push(beat.coverUrl)
     if (beat.audioUrl) fileUrlsRef.current.push(beat.audioUrl)
     setBeats((all) => [beat, ...all])
-    setForm({ title: '', bpm: '', key: '', tags: '' }); setAudioFile(null); setCoverFile(null)
     setSavingBeat(false)
-    openBeat(beat, 'data'); notify(beat.cloud ? 'Бит сохранён в облаке' : 'Черновик сохранён на этом устройстве')
+    if (beat.isLoopSource) setImportRevision((value) => value + 1)
+    if (currentMode.current === creativeMode) {
+      setForm({ title: '', bpm: '', key: '', tags: '' })
+      setAudioFile(null)
+      setCoverFile(null)
+      openBeat(beat, 'data')
+    }
+    notify(beat.cloud ? 'Аудио сохранено в облаке' : 'Черновик сохранён на этом устройстве')
   }
   const nav = isLoopmaker ? [
     { id: 'loops' as Screen, label: 'Лупы', Icon: ListMusic },
@@ -926,7 +942,7 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
 
   const salesLibrary = beats.filter((beat) => beat.cloud && !beat.isDemo)
   const showBeatSales = Boolean(creativeMode === 'producer' && statsSession && selected.cloud)
-  const detailTabs: [DetailTab, string][] = [['data', 'Данные'], ['publications', 'Публикации']]
+  const detailTabs: [DetailTab, string][] = isLoopmaker ? [['data', 'Данные']] : [['data', 'Данные'], ['publications', 'Публикации']]
   if (showBeatSales) detailTabs.push(['sales', 'Продажи'])
 
   function openSalesChat(url: string) {
@@ -941,7 +957,7 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
   }
 
   const isLoopPage = screen === 'loops' || screen === 'loop-beats' || screen === 'loop-stats'
-  const activeScreen = screen === 'detail' || screen === 'create' ? 'library' : screen === 'templates' ? 'more'
+  const activeScreen = screen === 'detail' || screen === 'create' ? homeScreen : screen === 'templates' ? 'more'
     : screen === 'import' || (isLoopmaker && screen === 'channels') ? isLoopmaker ? 'loops' : 'channels' : screen
   const activeModeLabel = creativeModes.find(({ id }) => id === creativeMode)!.label
   const showImportPrompt = screen === 'library' && importPromptVisible()
@@ -963,7 +979,11 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
         <aside className="desktop-rail" aria-label="Навигация"><div className="rail-head"><strong>Рабочее пространство</strong><span>{isLoopmaker ? 'Лупы и биты' : 'Аудио и публикации'}</span></div><nav style={{ '--nav-i': activeNavIndex } as CSSProperties}>{nav.map(({ id, label, Icon }) => <button key={id} className={activeScreen === id ? 'is-active' : ''} onClick={() => navigate(id)}><Icon size={19} />{label}<ChevronRight size={16} /></button>)}</nav><div className="rail-footer"><AudioLines size={18} /><span>{isLoopmaker ? 'Каталог и статистика Telegram.' : 'Аудио, исходные посты и статистика.'}</span></div></aside>
         <main className="main-content" key={isLoopPage ? 'loop-workspace' : screen}>
           {isLoopPage && <LoopWorkspace page={screen} initData={statsSession} channels={channels} importRevision={importRevision} pendingImports={screen === 'loops' ? pendingAudioPanel() : null}
-            library={beats.filter((beat) => beat.cloud && !beat.isDemo)} moreLibrary={moreCloudBeats()}
+            moreLibrary={moreCloudBeats()} addLoop={() => navigate('create')}
+            openLoop={(id) => {
+              const beat = beats.find((item) => item.id === id)
+              return beat && <button type="button" className="outline-button" onClick={() => openBeat(beat)}>Открыть запись</button>
+            }}
             importLoops={() => openImport()} goToBeats={() => navigate('loop-beats')}
             openTelegram={(url) => {
               if (webApp?.openTelegramLink) webApp.openTelegramLink(url)
@@ -1242,15 +1262,15 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
               }} />
           </>}
           {screen === 'detail' && selected && <>
-            <button className="back-link" onClick={() => navigate(focusedPublication ? 'publish' : detailFromSales ? 'sales' : detailFromStats ? 'overview' : 'library')}>
-              <ArrowLeft size={17} /> {focusedPublication ? 'К расписанию' : detailFromSales ? 'К продажам' : detailFromStats ? 'К статистике' : 'Библиотека'}
+            <button className="back-link" onClick={() => navigate(focusedPublication ? 'publish' : detailFromSales ? 'sales' : detailFromStats ? 'overview' : homeScreen)}>
+              <ArrowLeft size={17} /> {focusedPublication ? 'К расписанию' : detailFromSales ? 'К продажам' : detailFromStats ? 'К статистике' : isLoopmaker ? 'Лупы' : 'Библиотека'}
             </button><section className="detail-hero"><Cover beat={selected} className="detail-cover" /><div className="detail-identity"><div className="eyebrow">{selected.isDemo ? 'Демо-проект' : selected.status}</div><h1>{selected.title}</h1><p>{selected.tags}</p>{detailMetadata.length > 0 && <div className="meta-row"><span>{detailMetadata[0]}</span>{detailMetadata[1] && <><i aria-hidden="true" /><span>{detailMetadata[1]}</span></>}</div>}<div className="detail-audio">{selected.audioUrl ? <><FileAudio2 size={17} /><span>{selected.audioName}</span>{trackPlayButton(selected)}</> : selected.telegramSourceUrl ? <>{sourcePostLink(selected.telegramSourceUrl)}{canPlay(selected) && trackPlayButton(selected)}</> : <><Music2 size={18} /><span>{selected.isDemo ? 'Аудио для этого демо-бита не загружено' : 'Аудиофайл не добавлен'}</span></>}</div></div></section>
             <div className="detail-tabs" role="tablist" aria-label="Разделы бита">{detailTabs.map(([id, label]) => <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? 'is-active' : ''} onClick={() => setTab(id)}>{label}</button>)}</div>
             {tab === 'data' && <div className="detail-section" key="data"><div className="section-intro"><h2>Данные записи</h2><p>Изменения сохраняются автоматически.</p></div><div className="data-card data-card--editable"><label className="field"><span>НАЗВАНИЕ</span><input aria-label="Название записи" maxLength={120} value={selected.title} onChange={(event) => updateBeat({ title: event.target.value })} /></label><label className="field"><span>ТЕМП (BPM)</span><input aria-label="Темп BPM" type="number" min="1" max="300" value={selected.bpm === '—' ? '' : selected.bpm} onChange={(event) => updateBeat({ bpm: event.target.value || '—' })} /></label><div className="field"><span>ТОНАЛЬНОСТЬ</span><KeyPicker value={selected.key} label="Тональность бита" onChange={(key) => updateBeat({ key })} onCommit={(value) => { const key = normalizeMusicKey(value); if (key !== null) updateBeat({ key: key || "—" }); else { updateBeat({ key: "—" }); notify("Не распознал тональность; выбери вариант из списка.") } }} /></div><label className="field"><span>ТЕГИ</span><input aria-label="Теги бита" value={selected.tags} onChange={(event) => updateBeat({ tags: event.target.value })} /></label></div>
               {importedMetadata && <button type="button" className="outline-button cover-edit" onClick={() => updateBeat(importedMetadata)}>
                 <FileAudio2 size={16} aria-hidden="true" /> Подставить из имени файла
               </button>}
-              {!selected.isDemo && <label className="upload-zone cover-edit"><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void changeCover(event.target.files?.[0])} /><ImagePlus size={22} /><strong>Изменить обложку</strong><span>JPG, PNG или WEBP до 2 МБ</span></label>}<p className="detail-footnote">Подписи для площадок редактируются в разделе «Публикация». {selected.telegramSourceUrl ? 'Аудио доступно в исходном посте.' : selected.cloud ? 'MP3 и обложка хранятся в облаке.' : ''}</p>{!selected.isDemo && <div className="delete-beat">{cloudAvailable && !selected.cloud && <button onClick={migrateBeat} disabled={savingBeat}><UploadCloud size={16} /> {savingBeat ? 'Переносим…' : 'Перенести в облако'}</button>}{confirmDelete ? <><p>Удалить «{selected.title}» вместе с аудио и обложкой {selected.cloud ? 'из облака' : 'с этого устройства'}?</p><div><button onClick={() => setConfirmDelete(false)}>Отмена</button><button className="delete-beat-confirm" onClick={() => void deleteBeat(selected)} disabled={deleting}>Подтвердить удаление</button></div></> : <button onClick={() => setConfirmDelete(true)}><Trash2 size={16} /> Удалить бит</button>}</div>}</div>}
+              {!selected.isDemo && <label className="upload-zone cover-edit"><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void changeCover(event.target.files?.[0])} /><ImagePlus size={22} /><strong>Изменить обложку</strong><span>JPG, PNG или WEBP до 2 МБ</span></label>}<p className="detail-footnote">{!isLoopmaker && 'Подписи для площадок редактируются в разделе «Публикация». '}{selected.telegramSourceUrl ? 'Аудио доступно в исходном посте.' : selected.cloud ? 'MP3 и обложка хранятся в облаке.' : ''}</p>{!selected.isDemo && <div className="delete-beat">{cloudAvailable && !selected.cloud && <button onClick={migrateBeat} disabled={savingBeat}><UploadCloud size={16} /> {savingBeat ? 'Переносим…' : 'Перенести в облако'}</button>}{confirmDelete ? <><p>Удалить «{selected.title}» вместе с аудио и обложкой {selected.cloud ? 'из облака' : 'с этого устройства'}?</p><div><button onClick={() => setConfirmDelete(false)}>Отмена</button><button className="delete-beat-confirm" onClick={() => void deleteBeat(selected)} disabled={deleting}>Подтвердить удаление</button></div></> : <button onClick={() => setConfirmDelete(true)}><Trash2 size={16} /> Удалить запись</button>}</div>}</div>}
             {showBeatSales && tab === 'sales' && <ProducerSales key={selected.id} initData={statsSession}
               beat={selected} library={salesLibrary} openChat={openSalesChat} openBeat={openBeatSales} />}
             {tab === 'publications' && <PublicationHistory key={selected.id} beat={selected} channels={channels} focusedUrl={focusedPublication}
