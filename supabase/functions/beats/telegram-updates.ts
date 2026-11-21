@@ -56,6 +56,10 @@ export async function telegramWebhook(request: Request, client: () => SupabaseCl
       const { error } = await client().rpc('record_telegram_audio_update', post)
       if (error) return new Response(null, { status: 503 })
     }
+    if (update?.message?.chat?.type === 'private') {
+      const { processLoopInboxUpdate } = await import('./loop-inbox.ts')
+      await processLoopInboxUpdate(client(), update)
+    }
     return new Response(null, { status: 204 })
   } catch {
     return new Response(null, { status: 503 })

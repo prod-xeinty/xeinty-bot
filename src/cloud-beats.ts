@@ -179,8 +179,24 @@ export type PlatformStats = {
 
 export type LoopSource = { id: string; title: string; bpm: string; musical_key: string; telegram_source_url: string | null }
 export type LoopProducer = { id: string; name: string; channel: string | null }
-export type LoopWork = { id: string; title: string; loop_ids: string[]; producer_ids: string[]; release_url: string | null }
-export type LoopWorkspaceData = { loops: LoopSource[]; producers: LoopProducer[]; works: LoopWork[] }
+export type LoopWork = { id: string; title: string; loop_ids: string[]; producer_ids: string[]; release_url: string | null; audio_inbox_id?: string | null }
+export type LoopIncoming = {
+  id: string; title: string; loop_id: string | null; author_hint: string | null; release_url: string | null; audio_name: string | null
+}
+export type LoopWorkspaceData = {
+  loops: LoopSource[]; producers: LoopProducer[]; works: LoopWork[]; inboxEnabled: boolean; incoming: LoopIncoming[]
+}
+
+export function enableLoopInbox(initData: string) {
+  return call<{ enabled: boolean }>(initData, 'loop-inbox-enable')
+}
+export function dismissLoopIncoming(initData: string, id: string) {
+  return call<{ ok: boolean }>(initData, 'loop-inbox-dismiss', { id })
+}
+export async function loadLoopInboxAudio(initData: string, id: string, signal: AbortSignal) {
+  const response = await requestBeatAction(initData, 'loop-inbox-audio', { id }, signal)
+  return response.blob()
+}
 
 export function loadLoopWorkspace(initData: string, signal: AbortSignal) {
   return call<LoopWorkspaceData>(initData, 'loop-workspace', {}, signal)
@@ -191,7 +207,7 @@ export function addLoopSource(initData: string, id: string) {
 export function saveLoopProducer(initData: string, producer: { id?: string; name: string; channel: string }) {
   return call<{ producer: LoopProducer }>(initData, 'loop-producer-save', producer)
 }
-export function saveLoopWork(initData: string, work: { id?: string; title: string; loopIds: string[]; producerIds: string[]; releaseUrl: string }) {
+export function saveLoopWork(initData: string, work: { id?: string; inboxId?: string; title: string; loopIds: string[]; producerIds: string[]; releaseUrl: string }) {
   return call<{ work: LoopWork }>(initData, 'loop-work-save', work)
 }
 export function deleteLoopWork(initData: string, id: string) {

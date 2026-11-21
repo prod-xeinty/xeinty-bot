@@ -35,6 +35,8 @@ async function api<T>(method: string, payload: Record<string, unknown> | FormDat
   return result.result as T
 }
 
+export { api as telegramBotRequest }
+
 async function checkChannelAccess(address: string, userId: number, publish: boolean): Promise<Chat> {
   const chat = await api<Chat>('getChat', { chat_id: address })
   if (chat.type !== 'channel') throw new TelegramPublishError('Укажи канал Telegram.')

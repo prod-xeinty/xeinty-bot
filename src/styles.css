@@ -893,3 +893,4 @@ input, textarea { caret-color: #fff; }
   .topbar-brand { margin-inline: auto; gap: 2px; }
   .topbar-brand .wordmark, .topbar-brand .wordmark img { width: 40px; height: 40px; }
 }
+.loop-inbox-audio audio { display: block; width: min(100%, 380px); }
