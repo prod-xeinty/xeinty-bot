@@ -48,8 +48,20 @@ function botChatId(channel: string) {
   return String(-1_000_000_000_000 - Number(channel))
 }
 
-export async function telegramStats(db: SupabaseClient, userId: number, beatId?: string) {
-  const rows = (await publicationLinks(db, userId, 'telegram', beatId)).map((row) => ({ ...row, post: telegramPost(row.link) }))
+async function loopPostLinks(db: SupabaseClient, userId: number, channel?: string) {
+  const query = db.from('beats').select('id,telegram_source_url,telegram_link')
+    .eq('telegram_user_id', userId).eq('is_loop_source', true).order('created_at', { ascending: false }).limit(200)
+  const { data, error } = await (channel ? query.eq('telegram_source_chat_id', channel) : query)
+  if (error) throw error
+  return (data ?? []).flatMap((row) => {
+    const link = row.telegram_source_url || row.telegram_link
+    return link ? [{ beatId: row.id, link }] : []
+  })
+}
+
+export async function telegramStats(db: SupabaseClient, userId: number, beatId?: string, loopSources?: { channel?: string }) {
+  const links = loopSources ? await loopPostLinks(db, userId, loopSources.channel) : await publicationLinks(db, userId, 'telegram', beatId)
+  const rows = links.map((row) => ({ ...row, post: telegramPost(row.link) }))
   const privateChannels = new Set(rows.flatMap(({ post }) => post?.private ? [botChatId(post.channel)] : []))
   const connected = new Set<string>()
   if (privateChannels.size) {
@@ -133,6 +145,6 @@ export async function telegramStats(db: SupabaseClient, userId: number, beatId?:
     unsupported: rows.some(({ post }) => post === null),
     fetchedAt: new Date().toISOString(),
   }
-  const series = beatId ? null : await dailyViews(db, userId, 'telegram', data).catch(() => null)
+  const series = beatId || loopSources ? null : await dailyViews(db, userId, 'telegram', data).catch(() => null)
   return { ...data, series }
 }

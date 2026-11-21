@@ -869,3 +869,27 @@ input, textarea { caret-color: #fff; }
 .record-menu [role='menuitem'] svg { flex: none; }
 .record-menu [role='menuitem'].record-menu-danger { color: #ffb4ae; }
 .record-menu-note { margin: 0; padding: 6px 9px; color: inherit; font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
+
+.topbar-brand { display: flex; align-items: center; gap: 8px; }
+.topbar-mode { min-height: 40px; padding: 0 8px; border: 1px solid transparent; border-radius: 10px; background: transparent; color: inherit; font-size: 12px; font-weight: 650; }
+.topbar-mode:hover { background: #88888820; }
+.loop-workspace { display: grid; gap: 16px; }
+.loop-workspace .page-heading, .loop-panel .section-intro, .loop-panel p, .loop-panel h3, .loop-panel .stats-metric-grid { margin: 0; }
+.loop-panel { display: grid; min-width: 0; gap: 12px; }
+.loop-panel > button { justify-self: start; }
+.loop-panel strong, .loop-credits li { overflow-wrap: anywhere; }
+.mode-settings { margin-bottom: 16px; }
+.creative-mode-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr)); gap: 8px; }
+.creative-mode-options button { display: grid; align-content: start; justify-items: start; gap: 4px; min-height: 68px; padding: 10px 12px; text-align: left; }
+.creative-mode-options small { font-size: 11px; line-height: 1.4; opacity: .85; }
+.loop-checkboxes { display: grid; gap: 8px; min-inline-size: 0; max-height: 250px; margin: 0; overflow: auto; padding: 8px 12px; border: 1px solid #88888865; border-radius: 12px; }
+.loop-checkboxes label, .loop-producer-choice { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-height: 32px; }
+.loop-checkboxes input { margin: 0; accent-color: #888; }
+.loop-credits { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.loop-credits li { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; justify-content: space-between; }
+.loop-panel a.outline-button { text-decoration: none; }
+.loop-panel a.outline-button svg { flex: none; }
+@media (max-width: 850px) {
+  .topbar-brand { margin-inline: auto; gap: 2px; }
+  .topbar-brand .wordmark, .topbar-brand .wordmark img { width: 40px; height: 40px; }
+}

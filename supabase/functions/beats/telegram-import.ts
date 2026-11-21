@@ -226,7 +226,7 @@ export async function telegramImport(db: SupabaseClient, userId: number, body: R
   if (!candidates.length) return { data: { added: 0, skipped: new Set(selection as number[]).size, savedIds } }
   const { data: added, error: insertError } = await db.from('beats').upsert(candidates.map((post) => ({
     id: crypto.randomUUID(), telegram_user_id: userId, title: post.title, audio_name: post.name || null,
-    bpm: post.bpm, musical_key: post.key, status: 'Импортирован',
+    bpm: post.bpm, musical_key: post.key, status: 'Импортирован', is_loop_source: body.asLoops === true,
     telegram_source_chat_id: channel, telegram_source_message_id: post.id, telegram_source_url: post.url,
     telegram_source_date: post.date, telegram_link: post.url,
   })), { onConflict: 'telegram_user_id,telegram_source_chat_id,telegram_source_message_id', ignoreDuplicates: true }).select('id')

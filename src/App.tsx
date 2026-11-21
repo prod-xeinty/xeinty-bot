@@ -1,6 +1,8 @@
 import { YoutubeChannelSettings, YoutubeUpload } from './youtube-upload'
 import { getBeatPublications, postUrl, PublicationHistory, rememberPublication } from './publication-history'
 import { PlannedReleases } from './planned-releases'
+import { creativeModes, readCreativeMode, type CreativeMode } from './creative-mode'
+import { LoopWorkspace, type LoopPage } from './loop-workspace'
 import { usePlatformStats, StatsOverview, type StatsRanking } from './platform-stats'
 import xeintyLogo from './assets/xeinty-logo.png'
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
@@ -26,7 +28,7 @@ import { DirectTelegramPublication, readPublicationCover, OwnYoutubeVideo } from
 
 import { beatCaptionValues, CaptionTemplates, CaptionTools, readCaptionPreferences, TelegramChannels } from './telegram-settings'
 
-type Screen = 'library' | 'create' | 'publish' | 'channels' | 'more' | 'templates' | 'overview' | 'detail' | 'import'
+type Screen = LoopPage | 'library' | 'create' | 'publish' | 'channels' | 'more' | 'templates' | 'overview' | 'detail' | 'import'
 type DetailTab = 'data' | 'publications'
 type PublishMode = 'single' | 'batch' | 'planned'
 const telegramPublishingEnabled = false
@@ -99,7 +101,10 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
   const [importSuggestions, setImportSuggestions] = useState<TelegramImportSuggestion[]>([])
   const [importSuggestion, setImportSuggestion] = useState<TelegramImportSuggestion>()
   const [importRevision, setImportRevision] = useState(0)
-  const [screen, setScreen] = useState<Screen>('library')
+  const [creativeMode, setCreativeMode] = useState<CreativeMode>(() => readCreativeMode() ?? 'producer')
+  const isLoopmaker = creativeMode === 'loopmaker'
+  const homeScreen = isLoopmaker ? 'loops' : 'library'
+  const [screen, setScreen] = useState<Screen>(() => homeScreen)
   const [tab, setTab] = useState<DetailTab>('data')
   const [detailFromStats, setDetailFromStats] = useState(false)
   const [statsRanking, setStatsRanking] = useState<StatsRanking>({ query: '', metrics: { youtube: 'views', telegram: 'views' } })
@@ -548,6 +553,13 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
   }
 
   function notify(message: string) { setToast(message); window.setTimeout(() => setToast(''), 3500) }
+  function changeCreativeMode(mode: CreativeMode) {
+    if (mode === creativeMode) return
+    setCreativeMode(mode)
+    try { localStorage.setItem('xeinty-creative-mode', mode) } catch { /* The current session still uses the selected mode. */ }
+    navigate(mode === 'loopmaker' ? 'loops' : 'library')
+  }
+
   function navigate(next: Screen) {
     if (next === 'publish' && selected.isDemo) {
       const firstOwnBeat = beats.find((beat) => !beat.isDemo)
@@ -852,15 +864,23 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
     setSavingBeat(false)
     openBeat(beat, 'data'); notify(beat.cloud ? 'Бит сохранён в облаке' : 'Черновик сохранён на этом устройстве')
   }
-  const nav = [
-    { id: 'library' as Screen, label: 'Библиотека', Icon: ListMusic },
+  const nav = isLoopmaker ? [
+    { id: 'loops' as Screen, label: 'Лупы', Icon: ListMusic },
+    { id: 'loop-beats' as Screen, label: 'Биты', Icon: FileAudio2 },
+    { id: 'loop-stats' as Screen, label: 'Статистика', Icon: AudioLines },
+    { id: 'more' as Screen, label: 'Ещё', Icon: Ellipsis },
+  ] : [
+    { id: 'library' as Screen, label: creativeMode === 'artist' ? 'Треки' : 'Библиотека', Icon: ListMusic },
     { id: 'publish' as Screen, label: 'Публикация', Icon: Send },
     { id: 'channels' as Screen, label: 'Каналы', Icon: Radio },
     { id: 'overview' as Screen, label: 'Статистика', Icon: AudioLines },
     { id: 'more' as Screen, label: 'Ещё', Icon: Ellipsis },
   ]
 
-  const activeScreen = screen === 'detail' || screen === 'create' ? 'library' : screen === 'templates' ? 'more' : screen === 'import' ? 'channels' : screen
+  const isLoopPage = screen === 'loops' || screen === 'loop-beats' || screen === 'loop-stats'
+  const activeScreen = screen === 'detail' || screen === 'create' ? 'library' : screen === 'templates' ? 'more'
+    : screen === 'import' || (isLoopmaker && screen === 'channels') ? isLoopmaker ? 'loops' : 'channels' : screen
+  const activeModeLabel = creativeModes.find(({ id }) => id === creativeMode)!.label
   const showImportPrompt = screen === 'library' && importPromptVisible()
   const importedMetadata = screen === 'detail' && tab === 'data' ? missingImportedMetadata(selected) : undefined
   const latestMetadata = screen === 'library' ? recordMetadata(latest).join(' · ') : ''
@@ -875,10 +895,21 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
       <div className="ambient-form ambient-form--b" />
     </div>
     <div className="app-frame">
-      <header className="topbar"><button className="topbar-action topbar-create" onClick={() => cloudAvailable ? openImport() : navigate("create")} aria-label={cloudAvailable ? "Импортировать аудио" : "Добавить аудио"}><Plus size={20} /></button><button className="wordmark" onClick={() => navigate('library')} aria-label="XEINTY — к библиотеке"><img src={xeintyLogo} alt="" width={48} height={48} /></button><span className="topbar-badge">Демо-версия</span><button className="topbar-action topbar-overview" onClick={() => navigate('overview')} aria-label="Открыть статистику"><AudioLines size={19} /></button></header>
+      <header className="topbar"><button className="topbar-action topbar-create" onClick={() => cloudAvailable ? openImport() : navigate("create")} aria-label={cloudAvailable ? "Импортировать аудио" : "Добавить аудио"}><Plus size={20} /></button><div className="topbar-brand"><button className="wordmark" onClick={() => navigate(homeScreen)} aria-label={isLoopmaker ? 'XEINTY — к лупам' : 'XEINTY — к библиотеке'}><img src={xeintyLogo} alt="" width={48} height={48} /></button><button type="button" className="topbar-mode" onClick={() => navigate('more')} aria-label={'Сменить режим · ' + activeModeLabel}>{activeModeLabel}</button></div><button className="topbar-action topbar-overview" onClick={() => navigate(isLoopmaker ? 'loop-stats' : 'overview')} aria-label="Открыть статистику"><AudioLines size={19} /></button></header>
       <div className="workspace">
-        <aside className="desktop-rail" aria-label="Навигация"><div className="rail-head"><strong>Рабочее пространство</strong><span>Аудио и публикации</span></div><nav style={{ '--nav-i': activeNavIndex } as CSSProperties}>{nav.map(({ id, label, Icon }) => <button key={id} className={activeScreen === id ? 'is-active' : ''} onClick={() => navigate(id)}><Icon size={19} />{label}<ChevronRight size={16} /></button>)}</nav><div className="rail-footer"><AudioLines size={18} /><span>Аудио, исходные посты и статистика.</span></div></aside>
-        <main className="main-content" key={screen}>
+        <aside className="desktop-rail" aria-label="Навигация"><div className="rail-head"><strong>Рабочее пространство</strong><span>{isLoopmaker ? 'Лупы и биты' : 'Аудио и публикации'}</span></div><nav style={{ '--nav-i': activeNavIndex } as CSSProperties}>{nav.map(({ id, label, Icon }) => <button key={id} className={activeScreen === id ? 'is-active' : ''} onClick={() => navigate(id)}><Icon size={19} />{label}<ChevronRight size={16} /></button>)}</nav><div className="rail-footer"><AudioLines size={18} /><span>{isLoopmaker ? 'Каталог и статистика Telegram.' : 'Аудио, исходные посты и статистика.'}</span></div></aside>
+        <main className="main-content" key={isLoopPage ? 'loop-workspace' : screen}>
+          {isLoopPage && <LoopWorkspace page={screen} initData={statsSession} channels={channels}
+            library={beats.filter((beat) => beat.cloud && !beat.isDemo)} moreLibrary={moreCloudBeats()}
+            importLoops={() => openImport()} goToBeats={() => navigate('loop-beats')}
+            openTelegram={(url) => {
+              if (webApp?.openTelegramLink) webApp.openTelegramLink(url)
+              else window.open(url, '_blank', 'noopener,noreferrer')
+            }}
+            playLoop={(id) => {
+              const beat = beats.find((item) => item.id === id)
+              return beat && canPlay(beat) ? trackPlayButton(beat) : null
+            }} />}
           {screen === 'library' && <>
             {showImportPrompt && <section className="form-panel import-invite" aria-label="Импорт библиотеки">
               <div className="section-intro"><h2>Уже публикуешь музыку в Telegram?</h2><p>Перенеси каталог из своего канала.</p></div>
@@ -932,7 +963,7 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
               <div className="form-panel"><div className="panel-title"><span>02</span><div><h2>Файлы</h2><p>Обложка и аудио для предпросмотра</p></div></div><div className="upload-grid"><label className="upload-zone"><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => setCoverFile(e.target.files?.[0] ?? null)} /><ImagePlus size={25} /><strong>{coverFile ? coverFile.name : 'Обложка'}</strong><span>PNG, JPG или WEBP</span></label><label className="upload-zone"><input type="file" accept={cloudAvailable ? '.mp3,audio/mpeg' : 'audio/*,.mp3,.wav'} onChange={(e) => chooseAudio(e.target.files?.[0] ?? null)} /><UploadCloud size={26} /><strong>{audioFile ? audioFile.name : 'Аудиофайл'}</strong><span>{cloudAvailable ? 'MP3 до 15 МБ' : 'MP3 или WAV'}</span></label></div><p className="form-hint">{cloudAvailable ? 'MP3 и обложка сохранятся в облаке. WAV и MP4 останутся на твоём устройстве.' : 'Файлы пока сохранятся на этом устройстве. Облако работает при запуске через Telegram после подключения проекта.'}</p></div>
               <div className="create-submit"><button type="submit" className="primary-button" disabled={savingBeat}>{savingBeat ? 'Сохраняем…' : 'Создать черновик'} {!savingBeat && <ArrowRight size={19} />}</button><span>{cloudAvailable ? 'Черновик будет доступен в Telegram на других устройствах.' : 'Черновик сохранится в этом браузере.'}</span></div></form>
           </>}
-          {screen === 'publish' && <>
+          {!isLoopmaker && screen === 'publish' && <>
             <div className="page-heading"><div><h1>Публикация</h1><p>Подготовь публикацию или проверь расписание YouTube.</p></div></div>
             <div className={telegramPublishingEnabled ? "publish-mode publish-mode--three" : "publish-mode"} role="tablist" aria-label="Разделы публикации"
               style={{ '--tab-i': publishModes.findIndex(({id}) => id === publishMode) } as CSSProperties}>
@@ -1108,6 +1139,16 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
           </>}
           {screen === 'more' && <>
             <div className="page-heading"><div><h1>Ещё</h1></div></div>
+            <section className="form-panel loop-panel mode-settings" aria-labelledby="mode-heading">
+              <div className="section-intro"><h2 id="mode-heading">Режим работы</h2></div>
+              <div className="creative-mode-options" role="group" aria-label="Режим работы">
+                {creativeModes.map(({ id, label, description }) => <button key={id} type="button"
+                  className={id === creativeMode ? 'primary-button' : 'outline-button'} aria-pressed={id === creativeMode}
+                  onClick={() => changeCreativeMode(id)}>
+                  <strong>{label}</strong><small>{description}</small>
+                </button>)}
+              </div>
+            </section>
             <section className="form-panel theme-panel" aria-labelledby="theme-heading">
               <div className="section-intro"><h2 id="theme-heading">Оформление</h2></div>
               <div className="publish-mode theme-switch" role="group" aria-label="Тема оформления"
@@ -1116,7 +1157,8 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
                 <button type="button" className={theme === "light" ? "is-active" : undefined} aria-pressed={theme === "light"} onClick={() => setTheme("light")}><Sun size={16} aria-hidden="true" /> Светлая</button>
               </div>
             </section>
-            <button type="button" className="outline-button" onClick={() => navigate("templates")}>Шаблоны публикаций <ArrowRight size={17} /></button>
+            {isLoopmaker ? <button type="button" className="outline-button" onClick={() => navigate('channels')}>Каналы Telegram <ArrowRight size={17} /></button>
+              : <button type="button" className="outline-button" onClick={() => navigate("templates")}>Шаблоны публикаций <ArrowRight size={17} /></button>}
           </>}
           {screen === 'templates' && <>
             <button className="back-link" onClick={() => navigate('more')}><ArrowLeft size={17} /> Ещё</button>
@@ -1124,16 +1166,16 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
             <CaptionTemplates templates={captionPreferences.templates} onChange={(templates) => setCaptionPreferences((current) => ({ ...current, templates }))} />
           </>}
           {screen === 'import' && <>
-            <button className="back-link" onClick={() => navigate("channels")}><ArrowLeft size={17} /> Каналы</button>
+            <button className="back-link" onClick={() => navigate(isLoopmaker ? "loops" : "channels")}><ArrowLeft size={17} /> {isLoopmaker ? "Лупы" : "Каналы"}</button>
             <div className="page-heading"><div><h1>Импорт из Telegram</h1><p>Добавь карточки со ссылками на аудио из своего канала.</p></div></div>
-            <TelegramImport initData={cloudAvailable ? webApp?.initData : undefined} channels={channels} initialSuggestion={importSuggestion}
-              openChannels={() => navigate("channels")} openLibrary={() => navigate("library")} onSaved={() => { void loadLibraryPage(); setImportRevision((value) => value + 1) }} />
+            <TelegramImport asLoops={isLoopmaker} initData={cloudAvailable ? webApp?.initData : undefined} channels={channels} initialSuggestion={importSuggestion}
+              openChannels={() => navigate("channels")} openLibrary={() => navigate(homeScreen)} onSaved={() => { void loadLibraryPage(); setImportRevision((value) => value + 1) }} />
           </>}
           {screen === 'channels' && <>
-            <div className="page-heading"><div><h1>Каналы</h1><p>Импорт из Telegram и публикация на YouTube.</p></div></div>
+            <div className="page-heading"><div><h1>Каналы</h1><p>{isLoopmaker ? 'Подключи канал, из которого импортируешь лупы.' : 'Импорт из Telegram и публикация на YouTube.'}</p></div></div>
             <TelegramChannels available={cloudAvailable} initData={webApp?.initData} channels={channels} loadError={channelLoadError} onConnect={addChannel} onDisconnect={removeChannel} />
-            <YoutubeChannelSettings initData={cloudAvailable ? webApp?.initData : undefined}
-              openLink={webApp?.openLink ? (url) => webApp.openLink?.(url) : undefined} />
+            {!isLoopmaker && <YoutubeChannelSettings initData={cloudAvailable ? webApp?.initData : undefined}
+              openLink={webApp?.openLink ? (url) => webApp.openLink?.(url) : undefined} />}
           </>}
           {screen === 'overview' && <>
             <div className="page-heading"><div><h1>Статистика</h1><p>{cloudNext || beats.filter((beat) => beat.cloud).length > 200 ? "Сводка по последним 200 битам. Статистика остальных доступна в карточках." : "Показатели публикаций из библиотеки битов."}</p></div></div>
