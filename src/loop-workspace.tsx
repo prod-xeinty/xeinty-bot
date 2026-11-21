@@ -3,7 +3,7 @@ import { ExternalLink, Plus } from 'lucide-react'
 import { Dropdown } from './choice-menu'
 import { LoopInboxAudio } from './loop-inbox-audio'
 import {
-  addLoopSource, deleteLoopWork, dismissLoopIncoming, enableLoopInbox, loadLoopChannelStats, loadLoopWorkspace, saveLoopProducer, saveLoopWork,
+  deleteLoopWork, dismissLoopIncoming, enableLoopInbox, loadLoopChannelStats, loadLoopWorkspace, saveLoopProducer, saveLoopWork,
   type LoopIncoming, type LoopProducer, type LoopWork, type LoopWorkspaceData, type PlatformStats, type TelegramChannel,
 } from './cloud-beats'
 
@@ -70,10 +70,11 @@ function LoopChannelStats({ initData, channels }: { initData: string; channels: 
   </section>
 }
 
-export function LoopWorkspace({ page, initData, library, moreLibrary, channels, openTelegram, importLoops, goToBeats, playLoop, importRevision, pendingImports }: {
+export function LoopWorkspace({ page, initData, moreLibrary, addLoop, openLoop, channels, openTelegram, importLoops, goToBeats, playLoop, importRevision, pendingImports }: {
   page: LoopPage
   initData?: string
-  library: { id: string; title: string }[]
+  addLoop: () => void
+  openLoop: (id: string) => ReactNode
   moreLibrary: ReactNode
   channels: TelegramChannel[]
   openTelegram: (url: string) => void
@@ -85,7 +86,6 @@ export function LoopWorkspace({ page, initData, library, moreLibrary, channels, 
 }) {
   const [data, setData] = useState<LoopWorkspaceData>()
   const [revision, setRevision] = useState(0)
-  const [source, setSource] = useState('')
   const [work, setWork] = useState<WorkDraft>()
   const [producer, setProducer] = useState<ProducerDraft>()
   const [busy, setBusy] = useState(false)
@@ -123,7 +123,6 @@ export function LoopWorkspace({ page, initData, library, moreLibrary, channels, 
   const session = initData
   const loopsById = new Map(data.loops.map((item) => [item.id, item]))
   const producersById = new Map(data.producers.map((item) => [item.id, item]))
-  const libraryOptions = library.filter(({ id }) => !loopsById.has(id)).map(({ id, title }) => ({ value: id, label: title }))
   const incoming = data.incoming ?? []
   const released = data.works.filter(({ release_url }) => Boolean(release_url)).length
 
@@ -208,19 +207,12 @@ export function LoopWorkspace({ page, initData, library, moreLibrary, channels, 
     {page === 'loops' && <>
       {pendingImports}
       <section className="form-panel loop-panel">
-        <div className="section-intro"><h2>Добавить луп</h2><p>Импортируй лупы из Telegram или выбери запись, которая уже есть в библиотеке.</p></div>
+        <div className="section-intro"><h2>Добавить луп</h2><p>Загрузи аудиофайл или импортируй лупы из Telegram.</p></div>
         <div className="import-actions">
+          <button type="button" className="primary-button" onClick={addLoop} disabled={busy}>Загрузить аудиофайл</button>
           <button type="button" className="outline-button" onClick={importLoops} disabled={busy}>Импортировать из Telegram</button>
           {moreLibrary}
         </div>
-        {libraryOptions.length > 0 && <>
-          <Dropdown label="Запись из библиотеки" value={source} options={libraryOptions} placeholder="Выбрать запись" disabled={busy} onChange={setSource} />
-          <button type="button" className="primary-button" disabled={!source || busy} onClick={() => void save(async () => {
-            const result = await addLoopSource(session, source)
-            setData((current) => current && { ...current, loops: replaceById(current.loops, result.loop) })
-            setSource('')
-          }, 'Луп добавлен в каталог.')}><Plus size={16} aria-hidden="true" /> Добавить луп</button>
-        </>}
       </section>
       <section className="list-section loop-panel" aria-label="Каталог лупов">
         <div className="section-intro"><h2>Каталог</h2></div>
@@ -242,6 +234,7 @@ export function LoopWorkspace({ page, initData, library, moreLibrary, channels, 
             </li>)}</ul>}
             <div className="import-actions">
               {playLoop(loop.id)}
+              {openLoop(loop.id)}
               {loop.telegram_source_url && <TelegramLink url={loop.telegram_source_url} open={openTelegram}>Исходный пост</TelegramLink>}
               <button type="button" className="outline-button" onClick={() => {
                 setWork({ ...emptyWork, loopIds: [loop.id] })
