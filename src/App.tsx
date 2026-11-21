@@ -1,6 +1,7 @@
 import { YoutubeChannelSettings, YoutubeUpload } from './youtube-upload'
 import { getBeatPublications, postUrl, PublicationHistory, rememberPublication } from './publication-history'
 import { PlannedReleases } from './planned-releases'
+import { BeatLoopAuthor, ContactsPage } from './contacts'
 import { ProducerSales } from './producer-sales'
 import { creativeModes, readCreativeMode, type CreativeMode } from './creative-mode'
 import { LoopWorkspace, type LoopPage } from './loop-workspace'
@@ -29,7 +30,7 @@ import { DirectTelegramPublication, readPublicationCover, OwnYoutubeVideo } from
 
 import { beatCaptionValues, CaptionTemplates, CaptionTools, readCaptionPreferences, TelegramChannels } from './telegram-settings'
 
-type Screen = LoopPage | 'sales' | 'library' | 'create' | 'publish' | 'channels' | 'more' | 'templates' | 'overview' | 'detail' | 'import'
+type Screen = LoopPage | 'sales' | 'library' | 'create' | 'publish' | 'channels' | 'more' | 'templates' | 'friends' | 'overview' | 'detail' | 'import'
 type DetailTab = 'data' | 'publications' | 'sales'
 type PublishMode = 'single' | 'batch' | 'planned'
 const telegramPublishingEnabled = false
@@ -957,7 +958,7 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
   }
 
   const isLoopPage = screen === 'loops' || screen === 'loop-beats' || screen === 'loop-stats'
-  const activeScreen = screen === 'detail' || screen === 'create' ? homeScreen : screen === 'templates' ? 'more'
+  const activeScreen = screen === 'detail' || screen === 'create' ? homeScreen : (screen === 'templates' || screen === 'friends') ? 'more'
     : screen === 'import' || (isLoopmaker && screen === 'channels') ? isLoopmaker ? 'loops' : 'channels' : screen
   const activeModeLabel = creativeModes.find(({ id }) => id === creativeMode)!.label
   const showImportPrompt = screen === 'library' && importPromptVisible()
@@ -1233,8 +1234,15 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
                 <button type="button" className={theme === "light" ? "is-active" : undefined} aria-pressed={theme === "light"} onClick={() => setTheme("light")}><Sun size={16} aria-hidden="true" /> Светлая</button>
               </div>
             </section>
+            <button type="button" className="outline-button" onClick={() => navigate('friends')}>Друзья <ArrowRight size={17} /></button>
             {isLoopmaker ? <button type="button" className="outline-button" onClick={() => navigate('channels')}>Каналы Telegram <ArrowRight size={17} /></button>
               : <button type="button" className="outline-button" onClick={() => navigate("templates")}>Шаблоны публикаций <ArrowRight size={17} /></button>}
+          </>}
+          {screen === 'friends' && <>
+            <button className="back-link" onClick={() => navigate('more')}><ArrowLeft size={17} /> Ещё</button>
+            <div className="page-heading"><h1>Друзья</h1></div>
+            {statsSession ? <ContactsPage initData={statsSession} openChat={openSalesChat} />
+              : <p className="form-hint">Открой XEINTY в Telegram, чтобы сохранять контакты.</p>}
           </>}
           {screen === 'templates' && <>
             <button className="back-link" onClick={() => navigate('more')}><ArrowLeft size={17} /> Ещё</button>
@@ -1267,6 +1275,10 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
             </button><section className="detail-hero"><Cover beat={selected} className="detail-cover" /><div className="detail-identity"><div className="eyebrow">{selected.isDemo ? 'Демо-проект' : selected.status}</div><h1>{selected.title}</h1><p>{selected.tags}</p>{detailMetadata.length > 0 && <div className="meta-row"><span>{detailMetadata[0]}</span>{detailMetadata[1] && <><i aria-hidden="true" /><span>{detailMetadata[1]}</span></>}</div>}<div className="detail-audio">{selected.audioUrl ? <><FileAudio2 size={17} /><span>{selected.audioName}</span>{trackPlayButton(selected)}</> : selected.telegramSourceUrl ? <>{sourcePostLink(selected.telegramSourceUrl)}{canPlay(selected) && trackPlayButton(selected)}</> : <><Music2 size={18} /><span>{selected.isDemo ? 'Аудио для этого демо-бита не загружено' : 'Аудиофайл не добавлен'}</span></>}</div></div></section>
             <div className="detail-tabs" role="tablist" aria-label="Разделы бита">{detailTabs.map(([id, label]) => <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? 'is-active' : ''} onClick={() => setTab(id)}>{label}</button>)}</div>
             {tab === 'data' && <div className="detail-section" key="data"><div className="section-intro"><h2>Данные записи</h2><p>Изменения сохраняются автоматически.</p></div><div className="data-card data-card--editable"><label className="field"><span>НАЗВАНИЕ</span><input aria-label="Название записи" maxLength={120} value={selected.title} onChange={(event) => updateBeat({ title: event.target.value })} /></label><label className="field"><span>ТЕМП (BPM)</span><input aria-label="Темп BPM" type="number" min="1" max="300" value={selected.bpm === '—' ? '' : selected.bpm} onChange={(event) => updateBeat({ bpm: event.target.value || '—' })} /></label><div className="field"><span>ТОНАЛЬНОСТЬ</span><KeyPicker value={selected.key} label="Тональность бита" onChange={(key) => updateBeat({ key })} onCommit={(value) => { const key = normalizeMusicKey(value); if (key !== null) updateBeat({ key: key || "—" }); else { updateBeat({ key: "—" }); notify("Не распознал тональность; выбери вариант из списка.") } }} /></div><label className="field"><span>ТЕГИ</span><input aria-label="Теги бита" value={selected.tags} onChange={(event) => updateBeat({ tags: event.target.value })} /></label></div>
+              {creativeMode === 'producer' && statsSession && selected.cloud && <BeatLoopAuthor key={selected.id}
+                initData={statsSession} beatId={selected.id} authorId={selected.loopAuthorId}
+                openContacts={() => navigate('friends')} onSaved={(loopAuthorId) =>
+                  setBeats((current) => current.map((beat) => beat.id === selected.id ? { ...beat, loopAuthorId } : beat))} />}
               {importedMetadata && <button type="button" className="outline-button cover-edit" onClick={() => updateBeat(importedMetadata)}>
                 <FileAudio2 size={16} aria-hidden="true" /> Подставить из имени файла
               </button>}
