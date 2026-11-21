@@ -227,6 +227,12 @@ Deno.serve(async (request) => {
       return reply(result.data, result.status ?? 200, origin)
     }
 
+    if (typeof action === 'string' && action.startsWith('sales-')) {
+      const { producerSales } = await import('./producer-sales.ts')
+      const result = await producerSales(db, userId, body)
+      return reply(result.data, result.status ?? 200, origin)
+    }
+
     if (typeof action === 'string' && action.startsWith('loop-')) {
       if (action === 'loop-inbox-enable') {
         const { enableLoopInbox } = await import('./loop-inbox.ts')

@@ -177,6 +177,25 @@ export type PlatformStats = {
   series?: { day: string; views: number }[] | null
 }
 
+export type SaleCurrency = 'RUB' | 'USD' | 'EUR'
+export type ProducerDeal = {
+  id: string; title: string; contact: string; chat_url: string | null; amount_minor: number | null; currency: SaleCurrency
+  notes: string; created_at: string; updated_at: string; completed_at: string | null
+}
+export type DealInput = {
+  id: string; expectedUpdatedAt?: string; title: string; contact: string; chat: string; amountMinor: number | null
+  currency: SaleCurrency; notes: string; completed: boolean
+}
+export function loadProducerDeals(initData: string, signal: AbortSignal) {
+  return call<{ deals: ProducerDeal[] }>(initData, 'sales-list', {}, signal)
+}
+export function saveProducerDeal(initData: string, deal: DealInput) {
+  return call<{ deal: ProducerDeal }>(initData, 'sales-save', deal)
+}
+export function deleteProducerDeal(initData: string, deal: ProducerDeal) {
+  return call<{ ok: boolean }>(initData, 'sales-delete', { id: deal.id, expectedUpdatedAt: deal.updated_at })
+}
+
 export type LoopSource = { id: string; title: string; bpm: string; musical_key: string; telegram_source_url: string | null }
 export type LoopProducer = { id: string; name: string; channel: string | null }
 export type LoopWork = { id: string; title: string; loop_ids: string[]; producer_ids: string[]; release_url: string | null; audio_inbox_id?: string | null }

@@ -74,7 +74,7 @@
 [data-theme="light"] .outline-button:disabled { opacity: .55; }
 [data-theme="light"] :is(.video-error, .delete-beat .delete-beat-confirm) { color: #94261f; }
 [data-theme="light"] .delete-beat .delete-beat-confirm { border-color: #a6433e; }
-[data-theme="light"] :is(.field input, .field select, .publication-card textarea, .caption-template textarea, .batch-caption,
+[data-theme="light"] :is(.field input, .field select, .sales-workspace .field textarea, .publication-card textarea, .caption-template textarea, .batch-caption,
   .keywords-field input, .link-input, .beat-search, .choice-trigger, .choice-input input) {
   background: var(--light-white); border-color: var(--light-control-line); color: var(--light-ink); box-shadow: none;
 }

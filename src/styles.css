@@ -279,7 +279,7 @@ input, textarea { caret-color: #fff; }
 .links-panel { max-width: 650px; display: grid; gap: 18px; }
 .field { display: grid; gap: 8px; }
 .field > span { color: #b0b0b0; font-size: 12px; }
-.field input { width: 100%; height: 44px; padding: 0 12px; border: 1px solid #ffffff30; border-radius: 9px; background: #111112; color: #f3f3f2; font-size: 13px; }
+.field input, .sales-workspace .field textarea { width: 100%; height: 44px; padding: 0 12px; border: 1px solid #ffffff30; border-radius: 9px; background: #111112; color: #f3f3f2; font-size: 13px; }
 .field input::placeholder { color: #858586; }
 .batch-panel { max-width: 650px; margin-top: 20px; }
 .batch-library { display: grid; gap: 12px; }
@@ -894,3 +894,15 @@ input, textarea { caret-color: #fff; }
   .topbar-brand .wordmark, .topbar-brand .wordmark img { width: 40px; height: 40px; }
 }
 .loop-inbox-audio audio { display: block; width: min(100%, 380px); }
+
+.sales-workspace .list-section { margin-top: 0; }
+.sales-deal-head { display: flex; align-items: start; justify-content: space-between; gap: 8px 18px; flex-wrap: wrap; }
+.sales-deal-head > div, .sales-revenue { display: grid; gap: 4px; min-width: 0; }
+.sales-deal-head time { display: block; }
+.sales-notes { white-space: pre-wrap; overflow-wrap: anywhere; }
+.sales-chat-link { max-width: 100%; }
+.sales-chat-link span { overflow-wrap: anywhere; text-align: start; }
+.sales-chats { display: flex; flex-wrap: wrap; }
+.sales-status { display: flex; align-items: center; gap: 8px; min-height: 36px; }
+.sales-status input { accent-color: #888; }
+.sales-workspace .field textarea { width: 100%; min-height: 80px; padding: 10px; }
