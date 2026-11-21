@@ -1,17 +1,17 @@
 import { useState, type FormEvent } from 'react'
 import { ArrowRight, FileAudio2, ListFilter } from 'lucide-react'
 import { Dropdown } from './choice-menu'
-import { previewTelegramImport, saveTelegramImport, type TelegramChannel, type TelegramImportPreview, type TelegramImportSuggestion, type TelegramImportTrack } from './cloud-beats'
+import { previewTelegramImport, saveTelegramImport, type TelegramChannel, type TelegramImportPreview, type TelegramImportTrack } from './cloud-beats'
 
 const dateFormat = new Intl.DateTimeFormat('ru-RU', { dateStyle: 'medium' })
 const saveBatchSize = 100
 
-export function TelegramImport({ initData, channels, initialSuggestion, openChannels, openLibrary, onSaved, asLoops = false }: {
-  initData?: string; channels: TelegramChannel[]; initialSuggestion?: TelegramImportSuggestion; asLoops?: boolean; openChannels: () => void; openLibrary: () => void; onSaved: () => void
+export function TelegramImport({ initData, channels, openChannels, openLibrary, onSaved, asLoops = false }: {
+  initData?: string; channels: TelegramChannel[]; asLoops?: boolean; openChannels: () => void; openLibrary: () => void; onSaved: () => void
 }) {
-  const [preferredChannel, setPreferredChannel] = useState(initialSuggestion?.channel ?? '')
-  const [first, setFirst] = useState(initialSuggestion?.first ?? '')
-  const [last, setLast] = useState(initialSuggestion?.last === initialSuggestion?.first ? '' : initialSuggestion?.last ?? '')
+  const [preferredChannel, setPreferredChannel] = useState('')
+  const [first, setFirst] = useState('')
+  const [last, setLast] = useState('')
   const [hideImported, setHideImported] = useState(false)
   const [result, setResult] = useState<TelegramImportPreview>()
   const [selected, setSelected] = useState<number[]>([])

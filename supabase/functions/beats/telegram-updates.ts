@@ -74,7 +74,7 @@ export async function telegramImportSuggestions(db: SupabaseClient, userId: numb
   const suggestions = ((data ?? []) as PendingRange[]).map(({ channel, first_id, last_id, count }) => {
     const internal = String(-1_000_000_000_000 - Number(channel))
     const base = 'https://t.me/c/' + internal + '/'
-    return { channel, first: base + first_id, last: base + last_id, count }
+    return { channel, first: base + first_id, last: base + last_id, lastId: last_id, count }
   })
   return { suggestions }
 }

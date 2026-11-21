@@ -221,7 +221,7 @@ Deno.serve(async (request) => {
       } })
     }
 
-    if (action === 'telegram-import-preview' || action === 'telegram-import-save') {
+    if (action === 'telegram-import-preview' || action === 'telegram-import-save' || action === 'telegram-import-pending') {
       const { telegramImport } = await import('./telegram-import.ts')
       const result = await telegramImport(db, userId, body)
       return reply(result.data, result.status ?? 200, origin)
