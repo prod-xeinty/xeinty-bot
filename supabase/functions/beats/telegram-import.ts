@@ -136,7 +136,22 @@ export async function telegramImport(db: SupabaseClient, userId: number, body: R
   const preview = body.action === 'telegram-import-preview'
   const start = parseChannelPost(body.first)
   const end = parseChannelPost(body.last)
-  const selection = body.ids
+  const pending = body.action === 'telegram-import-pending'
+  let selection = body.ids
+  let nextPending: number | null = null
+  if (pending) {
+    const { through, after = 0 } = body
+    if (!validId(through) || (after !== 0 && !validId(after)) || after >= through) return fail('Обнови список новых аудио.')
+    const { data, error } = await db.rpc('pending_telegram_audio_posts', { p_owner: userId })
+      .eq('chat_id', channel).gt('message_id', after).lte('message_id', through)
+      .order('message_id').limit(pageSize + 1)
+    if (error) throw error
+    const posts = (data ?? []) as { message_id: number }[]
+    if (!posts.length) return { data: { added: 0, unavailable: 0, next: null } }
+    const ids = posts.slice(0, pageSize).map(({ message_id }) => message_id)
+    selection = ids
+    if (posts.length > pageSize) nextPending = ids[ids.length - 1]
+  }
   if (preview ? !start || !end : !Array.isArray(selection) || !selection.length || selection.length > pageSize || !selection.every(validId)) {
     return fail(preview ? 'Вставь две ссылки на посты Telegram.' : 'Выбери от 1 до 100 треков за раз.')
   }
@@ -179,7 +194,7 @@ export async function telegramImport(db: SupabaseClient, userId: number, body: R
       if (!validId(cursor) || cursor < low || cursor > high) return fail('Начни поиск заново.')
       const pageEnd = Math.min(cursor + pageSize - 1, high)
       await read([...between(cursor, pageEnd), low, high])
-      if (!found.has(low) || !found.has(high)) return fail('Один из граничных постов недоступен. Проверь ссылки.', 404)
+      if (!found.has(low) || !found.has(high)) return fail('Не удалось прочитать первый или последний пост. Проверь, что посты доступны боту и ссылки ведут на них.', 404)
       const firstGroup = cursor === low ? found.get(low)?.groupedId?.toString() : undefined
       const lastGroup = pageEnd === high ? found.get(high)?.groupedId?.toString() : undefined
       if (firstGroup && low > 1) await read(between(Math.max(1, low - albumNeighbors), low - 1))
@@ -200,7 +215,13 @@ export async function telegramImport(db: SupabaseClient, userId: number, body: R
     return fail('Не удалось прочитать посты. Проверь доступ бота к каналу и попробуй ещё раз.', 502)
   }
 
-  if (!audio.length) return { data: preview ? { tracks: [], next, scanned, total } : { added: 0, skipped: new Set(selection as number[]).size, savedIds: [] } }
+  function saved(added: number, savedIds: number[]) {
+    const selectedCount = new Set(selection as number[]).size
+    return { data: pending ? { added, unavailable: selectedCount - savedIds.length, next: nextPending }
+      : { added, skipped: selectedCount - added, savedIds } }
+  }
+
+  if (!audio.length) return preview ? { data: { tracks: [], next, scanned, total } } : saved(0, [])
   const { data: imports, error: readError } = await db.from('beats').select('telegram_source_message_id')
     .eq('telegram_user_id', userId).eq('telegram_source_chat_id', channel).in('telegram_source_message_id', audio.map((post) => post.id))
   if (readError) throw readError
@@ -223,7 +244,7 @@ export async function telegramImport(db: SupabaseClient, userId: number, body: R
   if (preview) return { data: { tracks, next, scanned, total } }
   const candidates = tracks.filter((post) => !post.exists)
   const savedIds = tracks.map(({ id }) => id)
-  if (!candidates.length) return { data: { added: 0, skipped: new Set(selection as number[]).size, savedIds } }
+  if (!candidates.length) return saved(0, savedIds)
   const { data: added, error: insertError } = await db.from('beats').upsert(candidates.map((post) => ({
     id: crypto.randomUUID(), telegram_user_id: userId, title: post.title, audio_name: post.name || null,
     bpm: post.bpm, musical_key: post.key, status: 'Импортирован', is_loop_source: body.asLoops === true,
@@ -231,6 +252,5 @@ export async function telegramImport(db: SupabaseClient, userId: number, body: R
     telegram_source_date: post.date, telegram_link: post.url,
   })), { onConflict: 'telegram_user_id,telegram_source_chat_id,telegram_source_message_id', ignoreDuplicates: true }).select('id')
   if (insertError) throw insertError
-  const addedCount = added?.length ?? 0
-  return { data: { added: addedCount, skipped: new Set(selection as number[]).size - addedCount, savedIds } }
+  return saved(added?.length ?? 0, savedIds)
 }

@@ -70,7 +70,7 @@ function LoopChannelStats({ initData, channels }: { initData: string; channels: 
   </section>
 }
 
-export function LoopWorkspace({ page, initData, library, moreLibrary, channels, openTelegram, importLoops, goToBeats, playLoop }: {
+export function LoopWorkspace({ page, initData, library, moreLibrary, channels, openTelegram, importLoops, goToBeats, playLoop, importRevision, pendingImports }: {
   page: LoopPage
   initData?: string
   library: { id: string; title: string }[]
@@ -78,6 +78,8 @@ export function LoopWorkspace({ page, initData, library, moreLibrary, channels, 
   channels: TelegramChannel[]
   openTelegram: (url: string) => void
   importLoops: () => void
+  importRevision: number
+  pendingImports: ReactNode
   goToBeats: () => void
   playLoop: (id: string) => ReactNode
 }) {
@@ -108,7 +110,7 @@ export function LoopWorkspace({ page, initData, library, moreLibrary, channels, 
       if (!controller.signal.aborted) setReloading(false)
     })
     return () => controller.abort()
-  }, [initData, revision])
+  }, [initData, revision, importRevision])
 
   const heading = page === 'loops' ? 'Лупы' : page === 'loop-beats' ? 'Биты на лупах' : 'Статистика лупмейкера'
   if (!initData) return <><div className="page-heading"><h1>{heading}</h1></div><p className="form-hint">Открой XEINTY в Telegram, чтобы работать с каталогом лупов.</p></>
@@ -204,6 +206,7 @@ export function LoopWorkspace({ page, initData, library, moreLibrary, channels, 
     {notice && <p className="form-hint" role="status">{notice}</p>}
 
     {page === 'loops' && <>
+      {pendingImports}
       <section className="form-panel loop-panel">
         <div className="section-intro"><h2>Добавить луп</h2><p>Импортируй лупы из Telegram или выбери запись, которая уже есть в библиотеке.</p></div>
         <div className="import-actions">

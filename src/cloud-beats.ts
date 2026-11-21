@@ -74,7 +74,13 @@ export async function loadCloudBeats(initData: string, signal?: AbortSignal, cur
   return { beats: result.beats.map((beat) => ({ ...beat, cloud: true as const })), next: result.next ?? null }
 }
 
-export type TelegramImportSuggestion = { channel: string; first: string; last: string; count: number }
+export type TelegramImportSuggestion = { channel: string; lastId: number; count: number }
+
+export function importPendingTelegramAudio(initData: string, channel: string, through: number, asLoops: boolean, after?: number) {
+  return call<{ added: number; unavailable: number; next: number | null }>(
+    initData, 'telegram-import-pending', { channel, through, after, asLoops }, AbortSignal.timeout(45_000),
+  )
+}
 
 export function loadTelegramImportSuggestions(initData: string, signal?: AbortSignal) {
   return call<{ suggestions: TelegramImportSuggestion[] }>(initData, 'telegram-import-suggestions', {}, signal)

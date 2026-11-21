@@ -20,7 +20,7 @@ import { getTelegramWebApp } from './telegram'
 import { makeStaticVideo, videoProfileLabel, type VideoStage } from './video'
 import { saveVideoFile } from './save-video'
 import { deleteStoredBeat, loadStoredBeats, saveBeatCover, saveBeatMetadata, saveNewBeat, type StoredBeat } from './beat-store'
-import { changeYoutubeSchedule, refreshYoutubeSchedule, cloudConfigured, connectTelegramChannel, disconnectTelegramChannel, loadTelegramAudioUrl, loadTelegramChannels, loadTelegramImportFile, loadTelegramImportSuggestions, type TelegramImportSuggestion, type BeatCursor, type TelegramChannel, type TelegramPublication, type PublicationLinks, createCloudBeat, deleteCloudBeat, loadCloudBeats, publishCloudTelegram, remoteFile, replaceCloudCover, updateCloudBeat } from './cloud-beats'
+import { changeYoutubeSchedule, refreshYoutubeSchedule, cloudConfigured, connectTelegramChannel, disconnectTelegramChannel, loadTelegramAudioUrl, loadTelegramChannels, loadTelegramImportFile, loadTelegramImportSuggestions, importPendingTelegramAudio, type TelegramImportSuggestion, type BeatCursor, type TelegramChannel, type TelegramPublication, type PublicationLinks, createCloudBeat, deleteCloudBeat, loadCloudBeats, publishCloudTelegram, remoteFile, replaceCloudCover, updateCloudBeat } from './cloud-beats'
 import { normalizeMusicKey } from './music-key'
 import { detectTelegramAudioMetadata } from '../supabase/functions/beats/audio-metadata'
 import { Dropdown, KeyPicker } from './choice-menu'
@@ -100,7 +100,7 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
   const importPromptKey = 'xeinty-telegram-import-seen:' + (webApp?.initDataUnsafe.user?.id ?? 'telegram')
   const [dismissedImport, setDismissedImport] = useState('')
   const [importSuggestions, setImportSuggestions] = useState<TelegramImportSuggestion[]>([])
-  const [importSuggestion, setImportSuggestion] = useState<TelegramImportSuggestion>()
+  const [importingChannel, setImportingChannel] = useState<string>()
   const [importRevision, setImportRevision] = useState(0)
   const [creativeMode, setCreativeMode] = useState<CreativeMode>(() => readCreativeMode() ?? 'producer')
   const isLoopmaker = creativeMode === 'loopmaker'
@@ -530,7 +530,37 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
     try { return !localStorage.getItem(importPromptKey) } catch { return true }
   }
 
-  function openImport(suggestion?: TelegramImportSuggestion) { dismissImportPrompt(); setImportSuggestion(suggestion); navigate('import') }
+  function openImport() { dismissImportPrompt(); navigate('import') }
+
+  function refreshImportedAudio() {
+    void loadLibraryPage()
+    setImportRevision((value) => value + 1)
+  }
+
+  async function importDetectedAudio({ channel, lastId }: TelegramImportSuggestion) {
+    if (!statsSession || importingChannel) return
+    setImportingChannel(channel)
+    let added = 0
+    let unavailable = 0
+    let after: number | undefined
+    try {
+      do {
+        const result = await importPendingTelegramAudio(statsSession, channel, lastId, isLoopmaker, after)
+        added += result.added
+        unavailable += result.unavailable
+        after = result.next ?? undefined
+      } while (after !== undefined)
+      if (unavailable === 0) setImportSuggestions((current) => current.filter((item) => item.channel !== channel || item.lastId > lastId))
+      notify(unavailable > 0 ? `Добавлено: ${added}. Недоступно в Telegram: ${unavailable}.`
+        : added > 0 ? `Добавлено аудиозаписей: ${added}` : 'Записи уже в каталоге.')
+    } catch (failure) {
+      const message = failure instanceof Error && failure.name !== 'TimeoutError' ? failure.message : 'Не удалось завершить импорт.'
+      notify(added > 0 ? `Добавлено: ${added}. ${message}` : message)
+    } finally {
+      refreshImportedAudio()
+      setImportingChannel(undefined)
+    }
+  }
 
   async function loadLibraryPage(cursor?: BeatCursor) {
     if (!webApp?.initData || cloudPageRequest.current) return
@@ -546,6 +576,19 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
     } catch (failure) {
       notify(failure instanceof Error && failure.name !== 'TimeoutError' ? failure.message : 'Не удалось загрузить библиотеку. Попробуй ещё раз.')
     } finally { cloudPageRequest.current = false; setCloudPageBusy(false) }
+  }
+
+  function pendingAudioPanel() {
+    return importSuggestions.some((item) => channels.some(({ id }) => id === item.channel)) && <section className="form-panel import-invite" aria-label="Новое аудио в Telegram">
+      <div className="section-intro"><h2>Новое аудио в Telegram</h2></div>
+      <ul className="channel-suggestions">{importSuggestions.map((item) => {
+        const channel = channels.find(({ id }) => id === item.channel)
+        return channel && <li className="channel-row" key={item.channel}>
+          <div><strong>{channel.title}</strong><small>Новых аудио: {item.count}</small></div>
+          <button type="button" className="outline-button" disabled={Boolean(importingChannel)} onClick={() => void importDetectedAudio(item)}>{importingChannel === item.channel ? 'Импортируем…' : 'Импортировать'}</button>
+        </li>
+      })}</ul>
+    </section>
   }
 
   function moreCloudBeats() {
@@ -919,7 +962,7 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
       <div className="workspace">
         <aside className="desktop-rail" aria-label="Навигация"><div className="rail-head"><strong>Рабочее пространство</strong><span>{isLoopmaker ? 'Лупы и биты' : 'Аудио и публикации'}</span></div><nav style={{ '--nav-i': activeNavIndex } as CSSProperties}>{nav.map(({ id, label, Icon }) => <button key={id} className={activeScreen === id ? 'is-active' : ''} onClick={() => navigate(id)}><Icon size={19} />{label}<ChevronRight size={16} /></button>)}</nav><div className="rail-footer"><AudioLines size={18} /><span>{isLoopmaker ? 'Каталог и статистика Telegram.' : 'Аудио, исходные посты и статистика.'}</span></div></aside>
         <main className="main-content" key={isLoopPage ? 'loop-workspace' : screen}>
-          {isLoopPage && <LoopWorkspace page={screen} initData={statsSession} channels={channels}
+          {isLoopPage && <LoopWorkspace page={screen} initData={statsSession} channels={channels} importRevision={importRevision} pendingImports={screen === 'loops' ? pendingAudioPanel() : null}
             library={beats.filter((beat) => beat.cloud && !beat.isDemo)} moreLibrary={moreCloudBeats()}
             importLoops={() => openImport()} goToBeats={() => navigate('loop-beats')}
             openTelegram={(url) => {
@@ -938,16 +981,7 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
               <div className="import-actions"><button type="button" className="primary-button" onClick={() => openImport()}>Импортировать из Telegram</button>
                 <button type="button" className="outline-button" onClick={dismissImportPrompt}>Позже</button></div>
             </section>}
-            {importSuggestions.some((item) => channels.some(({ id }) => id === item.channel)) && <section className="form-panel import-invite" aria-label="Новое аудио в Telegram">
-              <div className="section-intro"><h2>Новое аудио в Telegram</h2></div>
-              <ul className="channel-suggestions">{importSuggestions.map((item) => {
-                const channel = channels.find(({ id }) => id === item.channel)
-                return channel && <li className="channel-row" key={item.channel}>
-                  <div><strong>{channel.title}</strong><small>Новых аудио: {item.count}</small></div>
-                  <button type="button" className="outline-button" onClick={() => openImport(item)}>Посмотреть <ArrowRight size={15} /></button>
-                </li>
-              })}</ul>
-            </section>}
+            {pendingAudioPanel()}
             <div className="library-context"><span>Последняя запись</span><span>{projectCount(beats.length)}</span></div>
             <section className="feature-section" aria-label="Последняя запись">
               <div className="feature-card">
@@ -1190,8 +1224,8 @@ function App({ onStartupReady }: { onStartupReady: () => void }) {
           {screen === 'import' && <>
             <button className="back-link" onClick={() => navigate(isLoopmaker ? "loops" : "channels")}><ArrowLeft size={17} /> {isLoopmaker ? "Лупы" : "Каналы"}</button>
             <div className="page-heading"><div><h1>Импорт из Telegram</h1><p>Добавь карточки со ссылками на аудио из своего канала.</p></div></div>
-            <TelegramImport asLoops={isLoopmaker} initData={cloudAvailable ? webApp?.initData : undefined} channels={channels} initialSuggestion={importSuggestion}
-              openChannels={() => navigate("channels")} openLibrary={() => navigate(homeScreen)} onSaved={() => { void loadLibraryPage(); setImportRevision((value) => value + 1) }} />
+            <TelegramImport asLoops={isLoopmaker} initData={cloudAvailable ? webApp?.initData : undefined} channels={channels}
+              openChannels={() => navigate("channels")} openLibrary={() => navigate(homeScreen)} onSaved={refreshImportedAudio} />
           </>}
           {screen === 'channels' && <>
             <div className="page-heading"><div><h1>Каналы</h1><p>{isLoopmaker ? 'Подключи канал, из которого импортируешь лупы.' : 'Импорт из Telegram и публикация на YouTube.'}</p></div></div>
