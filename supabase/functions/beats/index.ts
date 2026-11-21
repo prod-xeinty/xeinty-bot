@@ -228,6 +228,21 @@ Deno.serve(async (request) => {
     }
 
     if (typeof action === 'string' && action.startsWith('loop-')) {
+      if (action === 'loop-inbox-enable') {
+        const { enableLoopInbox } = await import('./loop-inbox.ts')
+        const result = await enableLoopInbox(db, userId)
+        return reply(result, result.status ?? 200, origin)
+      }
+      if (action === 'loop-inbox-audio') {
+        const { inboxId, loopInboxAudio } = await import('./loop-inbox.ts')
+        if (typeof body.id !== 'string' || !inboxId.test(body.id)) return reply({ error: 'Выбери входящий бит.' }, 400, origin)
+        const result = await loopInboxAudio(db, userId, body.id)
+        if ('error' in result) return reply({ error: result.error }, result.status, origin)
+        return new Response(result.body, { headers: {
+          ...responseHeaders(origin), 'content-type': result.mime,
+          'cache-control': 'private, no-store', 'x-content-type-options': 'nosniff',
+        } })
+      }
       if (action === 'loop-channel-stats') {
         const channel = body.channel
         if (channel !== undefined && (typeof channel !== 'string' || !/^-100\d{5,16}$/.test(channel))) {

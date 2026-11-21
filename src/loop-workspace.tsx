@@ -1,13 +1,14 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { ExternalLink, Plus } from 'lucide-react'
 import { Dropdown } from './choice-menu'
+import { LoopInboxAudio } from './loop-inbox-audio'
 import {
-  addLoopSource, deleteLoopWork, loadLoopChannelStats, loadLoopWorkspace, saveLoopProducer, saveLoopWork,
-  type LoopProducer, type LoopWork, type LoopWorkspaceData, type PlatformStats, type TelegramChannel,
+  addLoopSource, deleteLoopWork, dismissLoopIncoming, enableLoopInbox, loadLoopChannelStats, loadLoopWorkspace, saveLoopProducer, saveLoopWork,
+  type LoopIncoming, type LoopProducer, type LoopWork, type LoopWorkspaceData, type PlatformStats, type TelegramChannel,
 } from './cloud-beats'
 
 export type LoopPage = 'loops' | 'loop-beats' | 'loop-stats'
-type WorkDraft = { id?: string; title: string; loopIds: string[]; producerIds: string[]; releaseUrl: string }
+type WorkDraft = { id?: string; inboxId?: string; title: string; loopIds: string[]; producerIds: string[]; releaseUrl: string }
 type ProducerDraft = { id?: string; name: string; channel: string }
 const emptyWork: WorkDraft = { title: '', loopIds: [], producerIds: [], releaseUrl: '' }
 const emptyProducer: ProducerDraft = { name: '', channel: '' }
@@ -90,14 +91,21 @@ export function LoopWorkspace({ page, initData, library, moreLibrary, channels, 
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [deleteId, setDeleteId] = useState<string>()
+  const [attachId, setAttachId] = useState<string>()
+  const [targetWork, setTargetWork] = useState('')
+  const [shareLink, setShareLink] = useState('')
+  const [reloading, setReloading] = useState(false)
   useEffect(() => {
     if (!initData) return
     const controller = new AbortController()
     setLoadError('')
+    setReloading(true)
     void loadLoopWorkspace(initData, controller.signal).then((result) => {
       if (!controller.signal.aborted) setData(result)
     }).catch((failure) => {
       if (!controller.signal.aborted) setLoadError(failure instanceof Error ? failure.message : 'Не удалось загрузить каталог.')
+    }).finally(() => {
+      if (!controller.signal.aborted) setReloading(false)
     })
     return () => controller.abort()
   }, [initData, revision])
@@ -114,6 +122,7 @@ export function LoopWorkspace({ page, initData, library, moreLibrary, channels, 
   const loopsById = new Map(data.loops.map((item) => [item.id, item]))
   const producersById = new Map(data.producers.map((item) => [item.id, item]))
   const libraryOptions = library.filter(({ id }) => !loopsById.has(id)).map(({ id, title }) => ({ value: id, label: title }))
+  const incoming = data.incoming ?? []
   const released = data.works.filter(({ release_url }) => Boolean(release_url)).length
 
   async function save(task: () => Promise<void>, success: string) {
@@ -143,8 +152,12 @@ export function LoopWorkspace({ page, initData, library, moreLibrary, channels, 
     if (!work) return
     void save(async () => {
       const result = await saveLoopWork(session, work)
-      setData((current) => current && { ...current, works: replaceById(current.works, result.work) })
+      setData((current) => current && {
+        ...current, works: replaceById(current.works, result.work),
+        incoming: (current.incoming ?? []).filter(({ id }) => id !== work.inboxId),
+      })
       setWork(undefined)
+      setAttachId(undefined)
     }, 'Бит сохранён.')
   }
 
@@ -157,13 +170,37 @@ export function LoopWorkspace({ page, initData, library, moreLibrary, channels, 
     setDeleteId(undefined)
   }
 
+  async function copyLoopLink(id: string) {
+    const url = 'https://t.me/xeintybot?start=loop_' + id
+    setShareLink(url)
+    setNotice('')
+    try {
+      await navigator.clipboard.writeText(url)
+      setNotice('Ссылка скопирована.')
+    } catch { /* The visible URL remains available for manual copying. */ }
+  }
+
+  function prepareIncoming(item: LoopIncoming, existing?: LoopWork) {
+    const hint = item.author_hint?.replace(/^@/, '').toLowerCase()
+    const author = hint ? data?.producers.find(({ name }) => name.replace(/^@/, '').toLowerCase() === hint) : undefined
+    setWork({
+      id: existing?.id, inboxId: item.id, title: existing?.title ?? item.title,
+      loopIds: [...new Set([...(existing?.loop_ids.filter((id) => loopsById.has(id)) ?? []), ...(item.loop_id && loopsById.has(item.loop_id) ? [item.loop_id] : [])])],
+      producerIds: [...new Set([...(existing?.producer_ids.filter((id) => producersById.has(id)) ?? []), ...(author ? [author.id] : [])])],
+      releaseUrl: existing?.release_url ?? item.release_url ?? '',
+    })
+    setProducer(!existing && !author && item.author_hint ? { name: item.author_hint, channel: '' } : undefined)
+    setAttachId(undefined)
+    setDeleteId(undefined)
+  }
+
   function editProducer(item: LoopProducer) {
     setProducer({ id: item.id, name: item.name, channel: item.channel ?? '' })
   }
 
   return <div className="loop-workspace">
     <div className="page-heading"><h1>{heading}</h1></div>
-    {error && <p className="video-error" role="alert">{error}</p>}
+    {(error || loadError) && <p className="video-error" role="alert">{error || loadError}</p>}
     {notice && <p className="form-hint" role="status">{notice}</p>}
 
     {page === 'loops' && <>
@@ -184,6 +221,9 @@ export function LoopWorkspace({ page, initData, library, moreLibrary, channels, 
       </section>
       <section className="list-section loop-panel" aria-label="Каталог лупов">
         <div className="section-intro"><h2>Каталог</h2></div>
+        {shareLink && <label className="field"><span>Ссылка для отправки бита</span>
+          <input value={shareLink} readOnly onFocus={(event) => event.currentTarget.select()} />
+        </label>}
         {!data.loops.length && <p className="form-hint">Добавленных лупов пока нет.</p>}
         {data.loops.map((loop) => {
           const linked = data.works.filter((item) => item.loop_ids.includes(loop.id))
@@ -205,6 +245,7 @@ export function LoopWorkspace({ page, initData, library, moreLibrary, channels, 
                 setProducer(undefined)
                 goToBeats()
               }}>Добавить бит</button>
+              {data.inboxEnabled && <button type="button" className="outline-button" onClick={() => void copyLoopLink(loop.id)}>Ссылка «Прислать бит»</button>}
             </div>
           </article>
         })}
@@ -212,6 +253,51 @@ export function LoopWorkspace({ page, initData, library, moreLibrary, channels, 
     </>}
 
     {page === 'loop-beats' && <>
+      <section className="form-panel loop-panel" aria-label="Входящие биты">
+        <div className="section-intro"><h2>Входящие</h2><p>Перешли боту аудио или пост с битом. Здесь можно подтвердить, кто и на какой луп его сделал.</p></div>
+        {!data.inboxEnabled ? <button type="button" className="primary-button" disabled={busy} onClick={() => void save(async () => {
+          await enableLoopInbox(session)
+          setData((current) => current && { ...current, inboxEnabled: true })
+        }, 'Входящие подключены.')}>Подключить входящие</button> : <>
+          <div className="import-actions">
+            <TelegramLink url="https://t.me/xeintybot" open={openTelegram}>Открыть бота</TelegramLink>
+            <button type="button" className="outline-button" disabled={busy || reloading} onClick={() => setRevision((value) => value + 1)}>
+              {reloading ? 'Загружаем…' : 'Обновить входящие'}
+            </button>
+          </div>
+          {!incoming.length && <p className="form-hint">Новых битов пока нет.</p>}
+          {incoming.map((item) => {
+            const linked = data.works.find((entry) => item.release_url && entry.release_url === item.release_url)
+            const loop = item.loop_id ? loopsById.get(item.loop_id) : undefined
+            return <article className="links-panel loop-panel" key={item.id}>
+              <strong>{item.title}</strong>
+              {item.author_hint && <small className="form-hint">Отправитель · {item.author_hint}</small>}
+              {loop && <small className="form-hint">Луп · {loop.title}</small>}
+              {item.audio_name && <LoopInboxAudio initData={session} id={item.id} />}
+              {item.release_url && <TelegramLink url={item.release_url} open={openTelegram}>Открыть пост</TelegramLink>}
+              <div className="import-actions">
+                <button type="button" className="outline-button" disabled={busy} onClick={() => prepareIncoming(item, linked)}>
+                  {linked ? 'Дополнить найденный бит' : 'Создать бит из входящего'}
+                </button>
+                {data.works.length > 0 && !linked && <button type="button" className="outline-button" disabled={busy} onClick={() => { setAttachId(item.id); setTargetWork('') }}>Привязать к существующему</button>}
+                <button type="button" className="outline-button" disabled={busy} onClick={() => void save(async () => {
+                  await dismissLoopIncoming(session, item.id)
+                  setData((current) => current && { ...current, incoming: (current.incoming ?? []).filter(({ id }) => id !== item.id) })
+                  if (work?.inboxId === item.id) setWork(undefined)
+                }, 'Входящий бит скрыт.')}>Скрыть</button>
+              </div>
+              {attachId === item.id && <div className="loop-panel">
+                <Dropdown label="Существующий бит" value={targetWork} placeholder="Выбрать бит" disabled={busy}
+                  options={data.works.map(({ id, title }) => ({ value: id, label: title }))} onChange={setTargetWork} />
+                <button type="button" className="primary-button" disabled={!targetWork || busy} onClick={() => {
+                  const existing = data.works.find(({ id }) => id === targetWork)
+                  if (existing) prepareIncoming(item, existing)
+                }}>Открыть карточку</button>
+              </div>}
+            </article>
+          })}
+        </>}
+      </section>
       <div className="import-actions">
         <button type="button" className="primary-button" disabled={busy} onClick={() => { setWork(emptyWork); setProducer(undefined) }}>
           <Plus size={16} aria-hidden="true" /> Добавить бит
@@ -255,6 +341,7 @@ export function LoopWorkspace({ page, initData, library, moreLibrary, channels, 
         {!data.works.length && <p className="form-hint">Добавь первый бит, даже если его пока прислали только в личку.</p>}
         {data.works.map((item) => <article className="links-panel loop-panel" key={item.id}>
           <strong>{item.title} · {item.release_url ? 'Вышел' : 'Демо'}</strong>
+          {item.audio_inbox_id && <LoopInboxAudio key={item.audio_inbox_id} initData={session} id={item.audio_inbox_id} />}
           <small className="form-hint">Лупы · {item.loop_ids.map((id) => loopsById.get(id)?.title ?? 'Удалённая запись').join(', ')}</small>
           <ul className="loop-credits">{item.producer_ids.map((id) => {
             const author = producersById.get(id)

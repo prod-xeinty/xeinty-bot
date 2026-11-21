@@ -6,7 +6,8 @@ const isId = (value: unknown): value is string => typeof value === 'string' && u
 const fail = (error: string, status = 400) => ({ data: { error }, status })
 const loopColumns = 'id,title,bpm,musical_key,telegram_source_url'
 const producerColumns = 'id,name,channel'
-const workColumns = 'id,title,loop_ids,producer_ids,release_url'
+const workColumns = 'id,title,loop_ids,producer_ids,release_url,audio_inbox_id'
+const inboxColumns = 'id,loop_id,title,author_hint,release_url,audio_name'
 const ownerColumn = 'telegram_user_id'
 
 function ids(value: unknown) {
@@ -41,12 +42,17 @@ async function allRows<T extends { id: string }>(db: SupabaseClient, table: stri
 
 export async function loopWorkspace(db: SupabaseClient, owner: number, body: Record<string, unknown>): Promise<{ data: object; status?: number }> {
   if (body.action === 'loop-workspace') {
-    const [loops, producers, works] = await Promise.all([
+    const [loops, producers, works, settings, incoming] = await Promise.all([
       allRows(db, 'beats', loopColumns, owner, true),
       allRows(db, 'loop_producers', producerColumns, owner),
       allRows(db, 'loop_works', workColumns, owner),
+      db.from('loop_inbox_settings').select(ownerColumn).eq(ownerColumn, owner).maybeSingle(),
+      db.from('loop_inbox').select(inboxColumns).eq(ownerColumn, owner).is('handled_at', null)
+        .order('created_at', { ascending: false }).limit(200),
     ])
-    return { data: { loops, producers, works } }
+    if (settings.error) throw settings.error
+    if (incoming.error) throw incoming.error
+    return { data: { loops, producers, works, inboxEnabled: Boolean(settings.data), incoming: incoming.data ?? [] } }
   }
 
   if (body.action === 'loop-source-add') {
@@ -72,11 +78,20 @@ export async function loopWorkspace(db: SupabaseClient, owner: number, body: Rec
     return data ? { data: { producer: data } } : fail('Продюсер не найден.', 404)
   }
 
+  if (body.action === 'loop-inbox-dismiss') {
+    if (!isId(body.id)) return fail('Выбери входящий бит.')
+    const { error } = await db.from('loop_inbox').update({ handled_at: new Date().toISOString() })
+      .eq(ownerColumn, owner).eq('id', body.id).is('handled_at', null)
+    if (error) throw error
+    return { data: { ok: true } }
+  }
+
   if (body.action === 'loop-work-save') {
     const title = typeof body.title === 'string' ? body.title.trim() : ''
     const loopIds = ids(body.loopIds)
     const producerIds = ids(body.producerIds)
-    if (!title || title.length > 120 || !loopIds || !producerIds || (body.id != null && !isId(body.id))) {
+    if (!title || title.length > 120 || !loopIds || !producerIds || (body.id != null && !isId(body.id)) ||
+      (body.inboxId != null && !isId(body.inboxId))) {
       return fail('Укажи название, выбери луп и продюсера.')
     }
     if (typeof body.releaseUrl !== 'string' || body.releaseUrl.length > 500) return fail('Укажи ссылку на пост Telegram.')
@@ -90,6 +105,15 @@ export async function loopWorkspace(db: SupabaseClient, owner: number, body: Rec
     if (loops.error) throw loops.error
     if (producers.error) throw producers.error
     if (loops.data.length !== loopIds.length || producers.data.length !== producerIds.length) return fail('Один из лупов или продюсеров недоступен.', 404)
+    if (body.inboxId) {
+      const { data, error } = await db.rpc('save_loop_work_from_inbox', {
+        p_owner: owner, p_inbox: body.inboxId, p_work: body.id ?? null, p_title: title,
+        p_loops: loopIds, p_producers: producerIds, p_release: releaseUrl,
+      }).select(workColumns).maybeSingle()
+      if (error?.code === '23505') return fail('Этот пост уже прикреплён к биту. Открой существующую карточку.', 409)
+      if (error) throw error
+      return data ? { data: { work: data } } : fail('Входящий бит уже обработан или не найден. Обнови список.', 409)
+    }
     const work = { title, loop_ids: loopIds, producer_ids: producerIds, release_url: releaseUrl }
     const query = body.id === undefined
       ? db.from('loop_works').insert({ ...work, telegram_user_id: owner })
